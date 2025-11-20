@@ -53,12 +53,6 @@ def validate_coreml(model_path: Path) -> None:
         print(f"  output {entry.name}: shape={shape}")
 
     os.environ.setdefault("TMPDIR", "/tmp")
-    try:
-        model = ct.models.MLModel(spec, compute_units=ct.ComputeUnit.CPU_ONLY)
-    except Exception:
-        # Retry with a forced /tmp tempdir in case the default sandbox path is blocked.
-        os.environ["TMPDIR"] = "/tmp"
-        model = ct.models.MLModel(spec, compute_units=ct.ComputeUnit.CPU_ONLY)
     feeds = {}
     for entry in spec.description.input:
         dtype = _dtype_to_numpy_code(entry.type.multiArrayType.dataType)
@@ -67,18 +61,32 @@ def validate_coreml(model_path: Path) -> None:
         shape = _coerce_shape(entry.type.multiArrayType.shape)
         feeds[entry.name] = np.zeros(shape, dtype=dtype)
 
-    try:
-        outputs = model.predict(feeds)
-        print("CoreML predict succeeded:")
-        for name, value in outputs.items():
-            shape = getattr(value, "shape", None)
-            dtype = getattr(value, "dtype", type(value))
-            print(f"  {name}: shape={shape}, dtype={dtype}")
-    except Exception as exc:  # noqa: B902
-        if "working directory" in str(exc):
-            print("CoreML predict skipped: sandbox cannot create a temp working directory.")
-        else:
-            print(f"CoreML predict failed: {exc}")
+    targets = [
+        ct.ComputeUnit.ALL,
+        getattr(ct.ComputeUnit, "CPU_AND_NE", ct.ComputeUnit.CPU_AND_GPU),
+        ct.ComputeUnit.CPU_AND_GPU,
+        ct.ComputeUnit.CPU_ONLY,
+    ]
+    seen = set()
+    for target in targets:
+        if target in seen:
+            continue
+        seen.add(target)
+        try:
+            model = ct.models.MLModel(spec, compute_units=target)
+            outputs = model.predict(feeds)
+            print(f"CoreML predict succeeded on {target.name}:")
+            for name, value in outputs.items():
+                shape = getattr(value, "shape", None)
+                dtype = getattr(value, "dtype", type(value))
+                print(f"  {name}: shape={shape}, dtype={dtype}")
+        except Exception as exc:  # noqa: B902
+            if "working directory" in str(exc):
+                print(
+                    f"CoreML predict skipped on {target.name}: sandbox cannot create a temp working directory."
+                )
+            else:
+                print(f"CoreML predict failed on {target.name}: {exc}")
 
 
 def main() -> int:
