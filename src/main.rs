@@ -2,7 +2,7 @@ use std::io::Write;
 use std::path::PathBuf;
 
 use clap::Parser;
-use rust_webnn_graph::{
+use rustnn::{
     ContextProperties, GraphError, GraphValidator, graph_to_dot, load_graph_from_path,
 };
 
@@ -67,8 +67,7 @@ fn run() -> Result<(), GraphError> {
     }
 
     if let Some(format) = cli.convert {
-        let converted =
-            rust_webnn_graph::ConverterRegistry::with_defaults().convert(&format, &graph)?;
+        let converted = rustnn::ConverterRegistry::with_defaults().convert(&format, &graph)?;
         if let Some(path) = cli.convert_output {
             std::fs::write(&path, converted.data)
                 .map_err(|err| GraphError::export(path.clone(), err))?;

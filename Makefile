@@ -13,6 +13,10 @@ PYTHON_VENV := $(VENV_BIN)/python
 
 .PHONY: build test fmt run viz onnx coreml coreml-validate coreml-env coreml-validate-env onnx-validate onnx-env onnx-validate-env validate-all-env
 
+clean:
+	$(CARGO) clean
+	rm -f target/graph.dot target/graph.png target/graph.onnx target/graph.mlmodel
+
 build:
 	$(CARGO) build
 
