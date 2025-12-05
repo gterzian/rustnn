@@ -61,3 +61,8 @@ dev = [
 features = ["python"]
 module-name = "webnn._rustnn"
 python-source = "python"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_python_api.py"]
+addopts = "-v"
