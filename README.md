@@ -2,6 +2,16 @@
 
 A Rust implementation of WebNN graph handling with Python bindings that implement the W3C WebNN API specification.
 
+---
+
+## ⚠️ **EXPERIMENTAL - DO NOT USE IN PRODUCTION**
+
+**This project is a proof-of-concept and experimental implementation. It is NOT ready for production use.**
+
+This is an early-stage experiment to explore WebNN graph handling and format conversion. Many features are incomplete, untested, or may change significantly. Use at your own risk for research and experimentation only.
+
+---
+
 **Features:**
 - 🦀 **Rust Library**: Validates WebNN graphs and converts to ONNX/CoreML formats
 - 🐍 **Python API**: Complete W3C WebNN API implementation via PyO3 bindings
