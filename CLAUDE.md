@@ -383,6 +383,39 @@ The `scripts/convert_onnx_to_webnn.py` script converts ONNX models to WebNN JSON
 - Includes preprocessing and optimization
 - Handles operator normalization
 
+## Claude Code - Approved Permissions
+
+The following operations have been approved for Claude Code to execute without requiring additional user confirmation:
+
+### Build & Development
+- `cargo check` - Run Rust type checking
+- `cargo build` - Build the Rust project
+- `pip install` - Install Python packages
+- `maturin develop` - Install Python package in development mode
+- `make help` - Display Makefile help
+- `make ci-docs` - Build documentation in strict mode
+
+### Python Execution
+- `python` - Run Python scripts
+- `.venv/bin/python` - Run Python from virtual environment
+
+### Documentation
+- `mkdocs build` - Build documentation site
+
+### File Operations
+- `find` - Search for files
+- `cat` - Read file contents
+
+### Git Operations
+- `git add` - Stage files for commit
+- `git commit` - Create commits
+- `git push` - Push commits to remote
+
+### Web Resources
+- `WebFetch(domain:www.w3.org)` - Fetch W3C WebNN specifications
+
+These permissions enable Claude Code to efficiently assist with development, testing, documentation, and version control tasks without interrupting the workflow.
+
 ## Resources
 
 - **README.md**: User-facing documentation and usage examples
