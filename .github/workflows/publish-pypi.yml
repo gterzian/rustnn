@@ -37,7 +37,11 @@ jobs:
           manylinux: auto
           before-script-linux: |
             # Install protobuf compiler in the manylinux container
-            yum install -y wget unzip
+            if command -v yum &> /dev/null; then
+              yum install -y wget unzip
+            elif command -v apt-get &> /dev/null; then
+              apt-get update && apt-get install -y wget unzip
+            fi
             PROTOC_VERSION=21.12
             if [ "${{ matrix.target }}" = "aarch64" ]; then
               PROTOC_ARCH=aarch_64
