@@ -57,7 +57,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
-        python-version: ['3.8', '3.11', '3.12']
+        python-version: ['3.12', '3.13']
     steps:
       - uses: actions/checkout@v4
 
@@ -112,7 +112,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: '3.12'
 
       - name: Install protobuf compiler
         run: |
@@ -147,7 +147,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: '3.12'
 
       - name: Install dependencies
         run: pip install -r docs/requirements.txt

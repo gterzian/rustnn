@@ -44,7 +44,7 @@ pip install maturin
 maturin develop --features python
 ```
 
-**Requirements:** Python 3.8+, NumPy 1.20+
+**Requirements:** Python 3.12+, NumPy 1.20+
 
 ### Rust Library
 
@@ -295,7 +295,7 @@ rustnn/
 ### Prerequisites
 
 - **Rust**: 1.70+ (install from [rustup.rs](https://rustup.rs/))
-- **Python**: 3.8+ with pip
+- **Python**: 3.12+ with pip
 - **Maturin**: `pip install maturin`
 - **Optional**: Graphviz for visualization (`brew install graphviz` on macOS)
 
