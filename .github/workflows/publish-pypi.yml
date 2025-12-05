@@ -36,8 +36,13 @@ jobs:
           sccache: 'true'
           manylinux: '2_28'
           before-script-linux: |
+            # Install dependencies (rust-cross containers use apt, standard use yum)
+            if command -v yum &> /dev/null; then
+              yum install -y wget unzip
+            elif command -v apt-get &> /dev/null; then
+              apt-get update && apt-get install -y wget unzip
+            fi
             # Install protobuf compiler
-            yum install -y wget unzip
             PROTOC_VERSION=21.12
             # Always use x86_64 protoc because the container runs on x86_64 host
             # even when cross-compiling for aarch64
