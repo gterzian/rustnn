@@ -1,5 +1,6 @@
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
+use std::collections::HashMap;
 use crate::converters::GraphConverter;
 use super::graph_builder::PyMLGraphBuilder;
 use super::graph::PyMLGraph;
@@ -7,7 +8,7 @@ use super::graph::PyMLGraph;
 #[cfg(feature = "onnx-runtime")]
 use crate::executors::onnx::run_onnx_zeroed;
 
-#[cfg(feature = "coreml-runtime")]
+#[cfg(all(target_os = "macos", feature = "coreml-runtime"))]
 use crate::executors::coreml::run_coreml_zeroed_cached;
 
 /// ML namespace - entry point for WebNN API
@@ -151,8 +152,9 @@ impl PyMLContext {
         let converted = converter.convert(&graph.graph_info)
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("ONNX conversion failed: {}", e)))?;
 
-        // Execute
-        run_onnx_zeroed(&converted.data)
+        // Execute with empty inputs map (for now)
+        let inputs = HashMap::new();
+        run_onnx_zeroed(&converted.data, &inputs)
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("ONNX execution failed: {}", e)))?;
 
         // Return empty dict for now (actual implementation would return outputs)
