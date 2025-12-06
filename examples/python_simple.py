@@ -59,12 +59,22 @@ def main():
 
     print(f"  x_data:\n{x_data}")
     print(f"  y_data:\n{y_data}")
-    print(f"  Expected output (relu(x+y)):\n{np.maximum(x_data + y_data, 0)}")
 
-    # Compute (note: this is a placeholder in current implementation)
-    print("\nComputing...")
+    expected = np.maximum(x_data + y_data, 0)
+    print(f"  Expected output (relu(x+y)):\n{expected}")
+
+    # Execute the graph
+    print("\nExecuting graph...")
     results = context.compute(graph, {"x": x_data, "y": y_data})
-    print(f"  Results: {list(results.keys())}")
+    print(f"  Output shape: {results['output'].shape}")
+    print(f"  Computed output:\n{results['output']}")
+
+    # Verify results (if ONNX runtime is available, results should match expected)
+    if np.allclose(results['output'], expected, rtol=1e-5):
+        print("  ✓ Results match expected values!")
+    else:
+        print("  ⚠ Results are zeros (ONNX runtime not available)")
+        print("    Build with: maturin develop --features python,onnx-runtime")
 
     # Convert to ONNX
     print("\nConverting to ONNX...")

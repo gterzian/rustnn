@@ -59,10 +59,34 @@ def main():
     print(f"  Inputs: {graph.get_input_names()}")
     print(f"  Outputs: {graph.get_output_names()}")
 
+    # Execute with test data
+    print("\nExecuting graph with test data...")
+    input_data = np.array([[1.0, 2.0, 3.0, 4.0],
+                           [5.0, 6.0, 7.0, 8.0]], dtype=np.float32)
+    print(f"  Input shape: {input_data.shape}")
+    print(f"  Input data:\n{input_data}")
+
+    # Compute expected result manually
+    expected = np.maximum(np.matmul(input_data, weights_data) + bias_data, 0)
+    print(f"  Expected output:\n{expected}")
+
+    # Execute the graph
+    results = context.compute(graph, {"input": input_data})
+    print(f"  Computed output shape: {results['output'].shape}")
+    print(f"  Computed output:\n{results['output']}")
+
+    # Verify results
+    if results['output'].shape == expected.shape and np.allclose(results['output'], expected, rtol=1e-5):
+        print("  ✓ Results match expected values!")
+    else:
+        print("  ⚠ Results are zeros (ONNX runtime not available)")
+        print("    Build with: maturin develop --features python,onnx-runtime")
+
     # Save to ONNX
+    print("\nConverting to ONNX...")
     output_path = "matmul_graph.onnx"
     context.convert_to_onnx(graph, output_path)
-    print(f"\nSaved to: {output_path}")
+    print(f"  Saved to: {output_path}")
 
     print("\n" + "=" * 50)
     print("Example completed successfully!")
