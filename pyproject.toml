@@ -7,7 +7,7 @@ name = "pywebnn"
 version = "0.1.0"
 description = "EXPERIMENTAL: Python implementation of the W3C WebNN API with ONNX and CoreML conversion support (NOT for production use)"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.11"
 license = { text = "Apache-2.0" }
 authors = [
     { name = "Tarek Ziade", email = "tarek@ziade.org" }

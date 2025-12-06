@@ -414,8 +414,7 @@ The following operations have been approved for Claude Code to execute without r
 - `cargo test` - Run Rust test suite
 - `pip install` - Install Python packages
 - `maturin develop` - Install Python package in development mode
-- `make help` - Display Makefile help
-- `make ci-docs` - Build documentation in strict mode
+- `make` - Run any Makefile target (all make commands are approved)
 
 ### Python Execution & Testing
 - `python` - Run Python scripts
@@ -449,6 +448,47 @@ The following operations have been approved for Claude Code to execute without r
 - `WebFetch(domain:www.w3.org)` - Fetch W3C WebNN specifications
 
 These permissions enable Claude Code to efficiently assist with development, testing, documentation, version control, and CI/CD monitoring tasks without interrupting the workflow.
+
+## Testing Validation Requirement
+
+**CRITICAL: All code changes MUST be validated by running tests before committing.**
+
+Before creating any git commit:
+
+1. **Run Rust Tests:**
+   ```bash
+   cargo test --lib
+   ```
+   - All tests must pass
+   - No new warnings should be introduced
+
+2. **Run Python Tests (if Python code changed):**
+   ```bash
+   make python-test
+   ```
+   - All tests must pass or be explicitly skipped (when dependencies unavailable)
+   - Skipped tests are acceptable if the skip reason is valid (e.g., ONNX runtime not available)
+
+3. **Fix Any Failures:**
+   - Never commit code with failing tests
+   - If tests fail, fix the code or update the tests
+   - Document any intentional test skips with clear skip conditions
+
+**Rationale:** Running tests catches regressions early and ensures code quality. Tests are the safety net that allows confident refactoring and feature additions.
+
+**Example workflow:**
+```bash
+# Make changes to code
+vim src/python/context.rs
+
+# Run tests to validate
+cargo test --lib
+make python-test
+
+# If tests pass, commit
+git add src/python/context.rs
+git commit -m "Update context implementation"
+```
 
 ## Git Commit Attribution Policy
 

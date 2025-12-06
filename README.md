@@ -44,7 +44,7 @@ pip install maturin
 maturin develop --features python
 ```
 
-**Requirements:** Python 3.12+, NumPy 1.20+
+**Requirements:** Python 3.11+, NumPy 1.20+
 
 ### Rust Library
 

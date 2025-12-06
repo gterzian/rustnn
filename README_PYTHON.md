@@ -7,7 +7,7 @@ Python bindings for the WebNN (Web Neural Network) API, providing a high-level i
 ### From Source
 
 You'll need:
-- Python 3.8 or later
+- Python 3.11 or later
 - Rust toolchain (install from https://rustup.rs/)
 - maturin: `pip install maturin`
 
