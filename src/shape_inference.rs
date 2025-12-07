@@ -721,6 +721,73 @@ pub fn infer_layer_normalization_shape(input_shape: &[u32]) -> Result<Vec<u32>, 
     Ok(input_shape.to_vec())
 }
 
+/// Options for reduction operations
+#[derive(Debug, Clone)]
+pub struct ReduceOptions {
+    pub axes: Vec<u32>,
+    pub keep_dimensions: bool,
+}
+
+/// Infer the output shape for reduction operations
+///
+/// Reduction operations reduce input tensor dimensions by applying a reduction function
+/// across specified axes.
+///
+/// Following the W3C WebNN specification for reduction operations:
+/// https://www.w3.org/TR/webnn/#api-mlgraphbuilder-reduce
+pub fn infer_reduce_shape(
+    input_shape: &[u32],
+    options: &ReduceOptions,
+) -> Result<Vec<u32>, GraphError> {
+    // If axes is empty, reduce all dimensions
+    let axes_to_reduce: Vec<u32> = if options.axes.is_empty() {
+        (0..input_shape.len() as u32).collect()
+    } else {
+        options.axes.clone()
+    };
+
+    // Validate that all axes are within bounds
+    for &axis in &axes_to_reduce {
+        if axis >= input_shape.len() as u32 {
+            return Err(GraphError::ShapeInferenceFailed {
+                reason: format!(
+                    "Reduce axis {} out of bounds for shape {:?} (rank {})",
+                    axis,
+                    input_shape,
+                    input_shape.len()
+                ),
+            });
+        }
+    }
+
+    // Check for duplicate axes
+    let mut sorted_axes = axes_to_reduce.clone();
+    sorted_axes.sort_unstable();
+    for i in 1..sorted_axes.len() {
+        if sorted_axes[i] == sorted_axes[i - 1] {
+            return Err(GraphError::ShapeInferenceFailed {
+                reason: format!("Duplicate axis {} in reduction axes", sorted_axes[i]),
+            });
+        }
+    }
+
+    // Build output shape
+    let mut output_shape = Vec::new();
+    for (idx, &dim) in input_shape.iter().enumerate() {
+        let is_reduced = axes_to_reduce.contains(&(idx as u32));
+        if is_reduced {
+            if options.keep_dimensions {
+                output_shape.push(1);
+            }
+            // else: omit this dimension
+        } else {
+            output_shape.push(dim);
+        }
+    }
+
+    Ok(output_shape)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1166,5 +1233,136 @@ mod tests {
 
         let output = infer_layer_normalization_shape(&[2, 10, 768]).unwrap();
         assert_eq!(output, vec![2, 10, 768]);
+    }
+
+    // Reduction operation tests
+    #[test]
+    fn test_reduce_single_axis() {
+        let options = ReduceOptions {
+            axes: vec![1],
+            keep_dimensions: false,
+        };
+        // [2, 3, 4] reduce axis 1 -> [2, 4]
+        let output = infer_reduce_shape(&[2, 3, 4], &options).unwrap();
+        assert_eq!(output, vec![2, 4]);
+    }
+
+    #[test]
+    fn test_reduce_single_axis_keep_dims() {
+        let options = ReduceOptions {
+            axes: vec![1],
+            keep_dimensions: true,
+        };
+        // [2, 3, 4] reduce axis 1 keep_dims -> [2, 1, 4]
+        let output = infer_reduce_shape(&[2, 3, 4], &options).unwrap();
+        assert_eq!(output, vec![2, 1, 4]);
+    }
+
+    #[test]
+    fn test_reduce_multiple_axes() {
+        let options = ReduceOptions {
+            axes: vec![1, 2],
+            keep_dimensions: false,
+        };
+        // [2, 3, 4, 5] reduce axes [1,2] -> [2, 5]
+        let output = infer_reduce_shape(&[2, 3, 4, 5], &options).unwrap();
+        assert_eq!(output, vec![2, 5]);
+    }
+
+    #[test]
+    fn test_reduce_multiple_axes_keep_dims() {
+        let options = ReduceOptions {
+            axes: vec![1, 2],
+            keep_dimensions: true,
+        };
+        // [2, 3, 4, 5] reduce axes [1,2] keep_dims -> [2, 1, 1, 5]
+        let output = infer_reduce_shape(&[2, 3, 4, 5], &options).unwrap();
+        assert_eq!(output, vec![2, 1, 1, 5]);
+    }
+
+    #[test]
+    fn test_reduce_all_axes() {
+        let options = ReduceOptions {
+            axes: vec![],
+            keep_dimensions: false,
+        };
+        // [2, 3, 4] reduce all axes -> [] (scalar)
+        let output = infer_reduce_shape(&[2, 3, 4], &options).unwrap();
+        assert_eq!(output, Vec::<u32>::new());
+    }
+
+    #[test]
+    fn test_reduce_all_axes_keep_dims() {
+        let options = ReduceOptions {
+            axes: vec![],
+            keep_dimensions: true,
+        };
+        // [2, 3, 4] reduce all axes keep_dims -> [1, 1, 1]
+        let output = infer_reduce_shape(&[2, 3, 4], &options).unwrap();
+        assert_eq!(output, vec![1, 1, 1]);
+    }
+
+    #[test]
+    fn test_reduce_last_axis() {
+        let options = ReduceOptions {
+            axes: vec![2],
+            keep_dimensions: false,
+        };
+        // [2, 3, 4] reduce axis 2 -> [2, 3]
+        let output = infer_reduce_shape(&[2, 3, 4], &options).unwrap();
+        assert_eq!(output, vec![2, 3]);
+    }
+
+    #[test]
+    fn test_reduce_first_axis() {
+        let options = ReduceOptions {
+            axes: vec![0],
+            keep_dimensions: false,
+        };
+        // [2, 3, 4] reduce axis 0 -> [3, 4]
+        let output = infer_reduce_shape(&[2, 3, 4], &options).unwrap();
+        assert_eq!(output, vec![3, 4]);
+    }
+
+    #[test]
+    fn test_reduce_invalid_axis() {
+        let options = ReduceOptions {
+            axes: vec![3],
+            keep_dimensions: false,
+        };
+        // [2, 3, 4] has only axes 0,1,2; axis 3 is out of bounds
+        assert!(infer_reduce_shape(&[2, 3, 4], &options).is_err());
+    }
+
+    #[test]
+    fn test_reduce_duplicate_axes() {
+        let options = ReduceOptions {
+            axes: vec![1, 1],
+            keep_dimensions: false,
+        };
+        // Duplicate axes should error
+        assert!(infer_reduce_shape(&[2, 3, 4], &options).is_err());
+    }
+
+    #[test]
+    fn test_reduce_non_contiguous_axes() {
+        let options = ReduceOptions {
+            axes: vec![0, 2],
+            keep_dimensions: false,
+        };
+        // [2, 3, 4, 5] reduce axes [0, 2] -> [3, 5]
+        let output = infer_reduce_shape(&[2, 3, 4, 5], &options).unwrap();
+        assert_eq!(output, vec![3, 5]);
+    }
+
+    #[test]
+    fn test_reduce_non_contiguous_axes_keep_dims() {
+        let options = ReduceOptions {
+            axes: vec![0, 2],
+            keep_dimensions: true,
+        };
+        // [2, 3, 4, 5] reduce axes [0, 2] keep_dims -> [1, 3, 1, 5]
+        let output = infer_reduce_shape(&[2, 3, 4, 5], &options).unwrap();
+        assert_eq!(output, vec![1, 3, 1, 5]);
     }
 }

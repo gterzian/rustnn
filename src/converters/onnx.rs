@@ -59,6 +59,37 @@ impl OnnxConverter {
         if op_type.eq_ignore_ascii_case("layerNormalization") {
             return "LayerNormalization".to_string();
         }
+        // Reduction operations
+        if op_type.eq_ignore_ascii_case("reduceSum") {
+            return "ReduceSum".to_string();
+        }
+        if op_type.eq_ignore_ascii_case("reduceMean") {
+            return "ReduceMean".to_string();
+        }
+        if op_type.eq_ignore_ascii_case("reduceMax") {
+            return "ReduceMax".to_string();
+        }
+        if op_type.eq_ignore_ascii_case("reduceMin") {
+            return "ReduceMin".to_string();
+        }
+        if op_type.eq_ignore_ascii_case("reduceProduct") {
+            return "ReduceProd".to_string();
+        }
+        if op_type.eq_ignore_ascii_case("reduceL1") {
+            return "ReduceL1".to_string();
+        }
+        if op_type.eq_ignore_ascii_case("reduceL2") {
+            return "ReduceL2".to_string();
+        }
+        if op_type.eq_ignore_ascii_case("reduceLogSum") {
+            return "ReduceLogSum".to_string();
+        }
+        if op_type.eq_ignore_ascii_case("reduceLogSumExp") {
+            return "ReduceLogSumExp".to_string();
+        }
+        if op_type.eq_ignore_ascii_case("reduceSumSquare") {
+            return "ReduceSumSquare".to_string();
+        }
 
         // Default: capitalize first letter
         let mut chars = op_type.chars();
@@ -288,6 +319,40 @@ impl OnnxConverter {
 
         attributes
     }
+
+    /// Create ONNX attributes for reduction operations
+    fn create_reduce_attributes(op: &Operation) -> Vec<AttributeProto> {
+        let mut attributes = Vec::new();
+
+        // Parse attributes from JSON
+        if let Some(axes) = op.attributes.get("axes").and_then(|v| v.as_array()) {
+            let axes_i64: Vec<i64> = axes
+                .iter()
+                .filter_map(|v| v.as_u64().map(|u| u as i64))
+                .collect();
+            if !axes_i64.is_empty() {
+                attributes.push(AttributeProto {
+                    name: Some("axes".to_string()),
+                    ints: axes_i64,
+                    ..Default::default()
+                });
+            }
+        }
+
+        if let Some(keep_dims) = op
+            .attributes
+            .get("keepDimensions")
+            .and_then(|v| v.as_bool())
+        {
+            attributes.push(AttributeProto {
+                name: Some("keepdims".to_string()),
+                i: Some(if keep_dims { 1 } else { 0 }),
+                ..Default::default()
+            });
+        }
+
+        attributes
+    }
 }
 
 impl crate::converters::GraphConverter for OnnxConverter {
@@ -345,6 +410,8 @@ impl crate::converters::GraphConverter for OnnxConverter {
                     Self::create_conv_transpose2d_attributes(op)
                 } else if op.op_type == "averagePool2d" || op.op_type == "maxPool2d" {
                     Self::create_pool2d_attributes(op)
+                } else if op.op_type.starts_with("reduce") {
+                    Self::create_reduce_attributes(op)
                 } else {
                     Vec::new()
                 };

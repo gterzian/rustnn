@@ -37,18 +37,19 @@
     - [x] batchNormalization (DONE: shape inference, Python API, ONNX converter, 3 tests)
     - [x] instanceNormalization (DONE: shape inference, Python API, ONNX converter, 4 tests)
     - [x] layerNormalization (DONE: shape inference, Python API, ONNX converter, 5 tests)
-    - localResponseNormalization
+    - [ ] localResponseNormalization (SKIPPED: Not in W3C WebNN spec as of 2025-12-07; W3C decision to use decomposition in higher layers due to rarity and backend inconsistencies)
 
-[ ] Reduction operations
-    - reduceSum
-    - reduceMean
-    - reduceMax
-    - reduceMin
-    - reduceProduct
-    - reduceL1
-    - reduceL2
-    - reduceLogSum
-    - reduceLogSumExp
+[x] Reduction operations (DONE: shape inference, Python API, ONNX/CoreML converters, 18 tests - all passing)
+    - [x] reduceSum (ONNX: ReduceSum, CoreML: ReduceSumLayerParams)
+    - [x] reduceMean (ONNX: ReduceMean, CoreML: ReduceMeanLayerParams)
+    - [x] reduceMax (ONNX: ReduceMax, CoreML: ReduceMaxLayerParams)
+    - [x] reduceMin (ONNX: ReduceMin, CoreML: ReduceMinLayerParams)
+    - [x] reduceProduct (ONNX: ReduceProd, CoreML: ReduceProdLayerParams)
+    - [x] reduceL1 (ONNX: ReduceL1, CoreML: ReduceL1LayerParams)
+    - [x] reduceL2 (ONNX: ReduceL2, CoreML: ReduceL2LayerParams)
+    - [x] reduceLogSum (ONNX: ReduceLogSum, CoreML: ReduceLogSumLayerParams)
+    - [x] reduceLogSumExp (ONNX: ReduceLogSumExp, CoreML: ReduceLogSumExpLayerParams)
+    - [x] reduceSumSquare (ONNX: ReduceSumSquare, CoreML: ReduceSumSquareLayerParams)
 
 [ ] Element-wise operations
     - abs, ceil, floor, round

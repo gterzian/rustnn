@@ -5,9 +5,12 @@ use crate::protos::coreml::specification::{
     ActivationParams, ActivationReLu, ActivationSigmoid, AddLayerParams, ArrayFeatureType,
     ConvolutionLayerParams, FeatureDescription, FeatureType, InnerProductLayerParams,
     LoadConstantLayerParams, Model, ModelDescription, NeuralNetwork, NeuralNetworkLayer,
-    PoolingLayerParams, SoftmaxLayerParams, TanhLayerParams, WeightParams,
-    activation_params::NonlinearityType, array_feature_type::ArrayDataType, feature_type, model,
-    neural_network_layer::Layer, pooling_layer_params,
+    PoolingLayerParams, ReduceL1LayerParams, ReduceL2LayerParams, ReduceLogSumExpLayerParams,
+    ReduceLogSumLayerParams, ReduceMaxLayerParams, ReduceMeanLayerParams, ReduceMinLayerParams,
+    ReduceProdLayerParams, ReduceSumLayerParams, ReduceSumSquareLayerParams, SoftmaxLayerParams,
+    TanhLayerParams, WeightParams, activation_params::NonlinearityType,
+    array_feature_type::ArrayDataType, feature_type, model, neural_network_layer::Layer,
+    pooling_layer_params,
 };
 use prost::Message;
 use prost::bytes::Bytes;
@@ -552,6 +555,256 @@ impl crate::converters::GraphConverter for CoremlConverter {
                         avg_pool_exclude_padding: false,
                         global_pooling: true, // Key: this makes it global pooling
                         ..Default::default()
+                    })),
+                    ..Default::default()
+                }
+            } else if op.op_type.eq_ignore_ascii_case("reduceSum") {
+                let axes = op
+                    .attributes
+                    .get("axes")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| arr.iter().filter_map(|v| v.as_i64()).collect::<Vec<i64>>())
+                    .unwrap_or_default();
+                let keep_dims = op
+                    .attributes
+                    .get("keepDimensions")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                let reduce_all = axes.is_empty();
+
+                NeuralNetworkLayer {
+                    name: layer_name,
+                    input: input_names,
+                    output: output_names,
+                    layer: Some(Layer::ReduceSum(ReduceSumLayerParams {
+                        axes,
+                        keep_dims,
+                        reduce_all,
+                    })),
+                    ..Default::default()
+                }
+            } else if op.op_type.eq_ignore_ascii_case("reduceMean") {
+                let axes = op
+                    .attributes
+                    .get("axes")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| arr.iter().filter_map(|v| v.as_i64()).collect::<Vec<i64>>())
+                    .unwrap_or_default();
+                let keep_dims = op
+                    .attributes
+                    .get("keepDimensions")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                let reduce_all = axes.is_empty();
+
+                NeuralNetworkLayer {
+                    name: layer_name,
+                    input: input_names,
+                    output: output_names,
+                    layer: Some(Layer::ReduceMean(ReduceMeanLayerParams {
+                        axes,
+                        keep_dims,
+                        reduce_all,
+                    })),
+                    ..Default::default()
+                }
+            } else if op.op_type.eq_ignore_ascii_case("reduceMax") {
+                let axes = op
+                    .attributes
+                    .get("axes")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| arr.iter().filter_map(|v| v.as_i64()).collect::<Vec<i64>>())
+                    .unwrap_or_default();
+                let keep_dims = op
+                    .attributes
+                    .get("keepDimensions")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                let reduce_all = axes.is_empty();
+
+                NeuralNetworkLayer {
+                    name: layer_name,
+                    input: input_names,
+                    output: output_names,
+                    layer: Some(Layer::ReduceMax(ReduceMaxLayerParams {
+                        axes,
+                        keep_dims,
+                        reduce_all,
+                    })),
+                    ..Default::default()
+                }
+            } else if op.op_type.eq_ignore_ascii_case("reduceMin") {
+                let axes = op
+                    .attributes
+                    .get("axes")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| arr.iter().filter_map(|v| v.as_i64()).collect::<Vec<i64>>())
+                    .unwrap_or_default();
+                let keep_dims = op
+                    .attributes
+                    .get("keepDimensions")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                let reduce_all = axes.is_empty();
+
+                NeuralNetworkLayer {
+                    name: layer_name,
+                    input: input_names,
+                    output: output_names,
+                    layer: Some(Layer::ReduceMin(ReduceMinLayerParams {
+                        axes,
+                        keep_dims,
+                        reduce_all,
+                    })),
+                    ..Default::default()
+                }
+            } else if op.op_type.eq_ignore_ascii_case("reduceProduct") {
+                let axes = op
+                    .attributes
+                    .get("axes")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| arr.iter().filter_map(|v| v.as_i64()).collect::<Vec<i64>>())
+                    .unwrap_or_default();
+                let keep_dims = op
+                    .attributes
+                    .get("keepDimensions")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                let reduce_all = axes.is_empty();
+
+                NeuralNetworkLayer {
+                    name: layer_name,
+                    input: input_names,
+                    output: output_names,
+                    layer: Some(Layer::ReduceProd(ReduceProdLayerParams {
+                        axes,
+                        keep_dims,
+                        reduce_all,
+                    })),
+                    ..Default::default()
+                }
+            } else if op.op_type.eq_ignore_ascii_case("reduceL1") {
+                let axes = op
+                    .attributes
+                    .get("axes")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| arr.iter().filter_map(|v| v.as_i64()).collect::<Vec<i64>>())
+                    .unwrap_or_default();
+                let keep_dims = op
+                    .attributes
+                    .get("keepDimensions")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                let reduce_all = axes.is_empty();
+
+                NeuralNetworkLayer {
+                    name: layer_name,
+                    input: input_names,
+                    output: output_names,
+                    layer: Some(Layer::ReduceL1(ReduceL1LayerParams {
+                        axes,
+                        keep_dims,
+                        reduce_all,
+                    })),
+                    ..Default::default()
+                }
+            } else if op.op_type.eq_ignore_ascii_case("reduceL2") {
+                let axes = op
+                    .attributes
+                    .get("axes")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| arr.iter().filter_map(|v| v.as_i64()).collect::<Vec<i64>>())
+                    .unwrap_or_default();
+                let keep_dims = op
+                    .attributes
+                    .get("keepDimensions")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                let reduce_all = axes.is_empty();
+
+                NeuralNetworkLayer {
+                    name: layer_name,
+                    input: input_names,
+                    output: output_names,
+                    layer: Some(Layer::ReduceL2(ReduceL2LayerParams {
+                        axes,
+                        keep_dims,
+                        reduce_all,
+                    })),
+                    ..Default::default()
+                }
+            } else if op.op_type.eq_ignore_ascii_case("reduceLogSum") {
+                let axes = op
+                    .attributes
+                    .get("axes")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| arr.iter().filter_map(|v| v.as_i64()).collect::<Vec<i64>>())
+                    .unwrap_or_default();
+                let keep_dims = op
+                    .attributes
+                    .get("keepDimensions")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                let reduce_all = axes.is_empty();
+
+                NeuralNetworkLayer {
+                    name: layer_name,
+                    input: input_names,
+                    output: output_names,
+                    layer: Some(Layer::ReduceLogSum(ReduceLogSumLayerParams {
+                        axes,
+                        keep_dims,
+                        reduce_all,
+                    })),
+                    ..Default::default()
+                }
+            } else if op.op_type.eq_ignore_ascii_case("reduceLogSumExp") {
+                let axes = op
+                    .attributes
+                    .get("axes")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| arr.iter().filter_map(|v| v.as_i64()).collect::<Vec<i64>>())
+                    .unwrap_or_default();
+                let keep_dims = op
+                    .attributes
+                    .get("keepDimensions")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                let reduce_all = axes.is_empty();
+
+                NeuralNetworkLayer {
+                    name: layer_name,
+                    input: input_names,
+                    output: output_names,
+                    layer: Some(Layer::ReduceLogSumExp(ReduceLogSumExpLayerParams {
+                        axes,
+                        keep_dims,
+                        reduce_all,
+                    })),
+                    ..Default::default()
+                }
+            } else if op.op_type.eq_ignore_ascii_case("reduceSumSquare") {
+                let axes = op
+                    .attributes
+                    .get("axes")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| arr.iter().filter_map(|v| v.as_i64()).collect::<Vec<i64>>())
+                    .unwrap_or_default();
+                let keep_dims = op
+                    .attributes
+                    .get("keepDimensions")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                let reduce_all = axes.is_empty();
+
+                NeuralNetworkLayer {
+                    name: layer_name,
+                    input: input_names,
+                    output: output_names,
+                    layer: Some(Layer::ReduceSumSquare(ReduceSumSquareLayerParams {
+                        axes,
+                        keep_dims,
+                        reduce_all,
                     })),
                     ..Default::default()
                 }

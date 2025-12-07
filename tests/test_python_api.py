@@ -1293,3 +1293,165 @@ async def test_async_context_properties(async_context):
 
     tensor = async_context.create_tensor([2, 2], "float32")
     assert tensor is not None
+
+
+# === Reduction Operations Tests ===
+
+def test_reduce_sum_single_axis(context):
+    """Test reduceSum operation with single axis"""
+    builder = context.create_graph_builder()
+    x = builder.input("x", [2, 3, 4], "float32")
+    output = builder.reduce_sum(x, axes=[1], keep_dimensions=False)
+    assert output.shape == [2, 4]
+    graph = builder.build({"output": output})
+
+
+def test_reduce_sum_single_axis_keep_dims(context):
+    """Test reduceSum operation with keep_dimensions=True"""
+    builder = context.create_graph_builder()
+    x = builder.input("x", [2, 3, 4], "float32")
+    output = builder.reduce_sum(x, axes=[1], keep_dimensions=True)
+    assert output.shape == [2, 1, 4]
+    graph = builder.build({"output": output})
+
+
+def test_reduce_sum_multiple_axes(context):
+    """Test reduceSum operation with multiple axes"""
+    builder = context.create_graph_builder()
+    x = builder.input("x", [2, 3, 4, 5], "float32")
+    output = builder.reduce_sum(x, axes=[1, 2], keep_dimensions=False)
+    assert output.shape == [2, 5]
+    graph = builder.build({"output": output})
+
+
+def test_reduce_sum_all_axes(context):
+    """Test reduceSum operation reducing all axes"""
+    builder = context.create_graph_builder()
+    x = builder.input("x", [2, 3, 4], "float32")
+    output = builder.reduce_sum(x, axes=None, keep_dimensions=False)
+    assert output.shape == []  # Scalar
+    graph = builder.build({"output": output})
+
+
+def test_reduce_mean_single_axis(context):
+    """Test reduceMean operation with single axis"""
+    builder = context.create_graph_builder()
+    x = builder.input("x", [2, 3, 4], "float32")
+    output = builder.reduce_mean(x, axes=[1], keep_dimensions=False)
+    assert output.shape == [2, 4]
+    graph = builder.build({"output": output})
+
+
+def test_reduce_mean_keep_dims(context):
+    """Test reduceMean operation with keep_dimensions=True"""
+    builder = context.create_graph_builder()
+    x = builder.input("x", [2, 3, 4], "float32")
+    output = builder.reduce_mean(x, axes=[0, 2], keep_dimensions=True)
+    assert output.shape == [1, 3, 1]
+    graph = builder.build({"output": output})
+
+
+def test_reduce_max(context):
+    """Test reduceMax operation"""
+    builder = context.create_graph_builder()
+    x = builder.input("x", [2, 3, 4], "float32")
+    output = builder.reduce_max(x, axes=[1], keep_dimensions=False)
+    assert output.shape == [2, 4]
+    graph = builder.build({"output": output})
+
+
+def test_reduce_min(context):
+    """Test reduceMin operation"""
+    builder = context.create_graph_builder()
+    x = builder.input("x", [2, 3, 4], "float32")
+    output = builder.reduce_min(x, axes=[2], keep_dimensions=False)
+    assert output.shape == [2, 3]
+    graph = builder.build({"output": output})
+
+
+def test_reduce_product(context):
+    """Test reduceProduct operation"""
+    builder = context.create_graph_builder()
+    x = builder.input("x", [2, 3, 4], "float32")
+    output = builder.reduce_product(x, axes=[1], keep_dimensions=False)
+    assert output.shape == [2, 4]
+    graph = builder.build({"output": output})
+
+
+def test_reduce_l1(context):
+    """Test reduceL1 operation (sum of absolute values)"""
+    builder = context.create_graph_builder()
+    x = builder.input("x", [2, 3, 4], "float32")
+    output = builder.reduce_l1(x, axes=[1], keep_dimensions=False)
+    assert output.shape == [2, 4]
+    graph = builder.build({"output": output})
+
+
+def test_reduce_l2(context):
+    """Test reduceL2 operation (Euclidean norm)"""
+    builder = context.create_graph_builder()
+    x = builder.input("x", [2, 3, 4], "float32")
+    output = builder.reduce_l2(x, axes=[1], keep_dimensions=False)
+    assert output.shape == [2, 4]
+    graph = builder.build({"output": output})
+
+
+def test_reduce_log_sum(context):
+    """Test reduceLogSum operation"""
+    builder = context.create_graph_builder()
+    x = builder.input("x", [2, 3, 4], "float32")
+    output = builder.reduce_log_sum(x, axes=[1], keep_dimensions=False)
+    assert output.shape == [2, 4]
+    graph = builder.build({"output": output})
+
+
+def test_reduce_log_sum_exp(context):
+    """Test reduceLogSumExp operation"""
+    builder = context.create_graph_builder()
+    x = builder.input("x", [2, 3, 4], "float32")
+    output = builder.reduce_log_sum_exp(x, axes=[1], keep_dimensions=False)
+    assert output.shape == [2, 4]
+    graph = builder.build({"output": output})
+
+
+def test_reduce_sum_square(context):
+    """Test reduceSumSquare operation"""
+    builder = context.create_graph_builder()
+    x = builder.input("x", [2, 3, 4], "float32")
+    output = builder.reduce_sum_square(x, axes=[1], keep_dimensions=False)
+    assert output.shape == [2, 4]
+    graph = builder.build({"output": output})
+
+
+def test_reduce_invalid_axis(context):
+    """Test that reduction with out-of-bounds axis raises error"""
+    builder = context.create_graph_builder()
+    x = builder.input("x", [2, 3, 4], "float32")
+    with pytest.raises(ValueError, match="out of bounds"):
+        output = builder.reduce_sum(x, axes=[5], keep_dimensions=False)
+
+
+def test_reduce_duplicate_axes(context):
+    """Test that reduction with duplicate axes raises error"""
+    builder = context.create_graph_builder()
+    x = builder.input("x", [2, 3, 4], "float32")
+    with pytest.raises(ValueError, match="Duplicate axis"):
+        output = builder.reduce_sum(x, axes=[1, 1], keep_dimensions=False)
+
+
+def test_reduce_sum_non_contiguous_axes(context):
+    """Test reduction with non-contiguous axes"""
+    builder = context.create_graph_builder()
+    x = builder.input("x", [2, 3, 4, 5], "float32")
+    output = builder.reduce_sum(x, axes=[0, 2], keep_dimensions=False)
+    assert output.shape == [3, 5]
+    graph = builder.build({"output": output})
+
+
+def test_reduce_sum_non_contiguous_axes_keep_dims(context):
+    """Test reduction with non-contiguous axes and keep_dimensions=True"""
+    builder = context.create_graph_builder()
+    x = builder.input("x", [2, 3, 4, 5], "float32")
+    output = builder.reduce_sum(x, axes=[0, 2], keep_dimensions=True)
+    assert output.shape == [1, 3, 1, 5]
+    graph = builder.build({"output": output})

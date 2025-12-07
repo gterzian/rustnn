@@ -1036,6 +1036,218 @@ impl PyMLGraphBuilder {
         Ok(py_operand)
     }
 
+    // Reduction operations
+
+    /// Reduce Sum operation
+    ///
+    /// Reduces the input tensor by summing elements along specified axes.
+    ///
+    /// Args:
+    ///     input: Input operand
+    ///     axes: Axes to reduce (default: all axes)
+    ///     keep_dimensions: Keep reduced dimensions with size 1 (default: false)
+    ///
+    /// Returns:
+    ///     MLOperand: The output operand
+    #[pyo3(signature = (input, axes=None, keep_dimensions=false))]
+    fn reduce_sum(
+        &mut self,
+        input: &PyMLOperand,
+        axes: Option<Vec<u32>>,
+        keep_dimensions: bool,
+    ) -> PyResult<PyMLOperand> {
+        self.reduce_op("reduceSum", input, axes, keep_dimensions)
+    }
+
+    /// Reduce Mean operation
+    ///
+    /// Reduces the input tensor by computing the arithmetic mean along specified axes.
+    ///
+    /// Args:
+    ///     input: Input operand
+    ///     axes: Axes to reduce (default: all axes)
+    ///     keep_dimensions: Keep reduced dimensions with size 1 (default: false)
+    ///
+    /// Returns:
+    ///     MLOperand: The output operand
+    #[pyo3(signature = (input, axes=None, keep_dimensions=false))]
+    fn reduce_mean(
+        &mut self,
+        input: &PyMLOperand,
+        axes: Option<Vec<u32>>,
+        keep_dimensions: bool,
+    ) -> PyResult<PyMLOperand> {
+        self.reduce_op("reduceMean", input, axes, keep_dimensions)
+    }
+
+    /// Reduce Max operation
+    ///
+    /// Reduces the input tensor by computing the maximum value along specified axes.
+    ///
+    /// Args:
+    ///     input: Input operand
+    ///     axes: Axes to reduce (default: all axes)
+    ///     keep_dimensions: Keep reduced dimensions with size 1 (default: false)
+    ///
+    /// Returns:
+    ///     MLOperand: The output operand
+    #[pyo3(signature = (input, axes=None, keep_dimensions=false))]
+    fn reduce_max(
+        &mut self,
+        input: &PyMLOperand,
+        axes: Option<Vec<u32>>,
+        keep_dimensions: bool,
+    ) -> PyResult<PyMLOperand> {
+        self.reduce_op("reduceMax", input, axes, keep_dimensions)
+    }
+
+    /// Reduce Min operation
+    ///
+    /// Reduces the input tensor by computing the minimum value along specified axes.
+    ///
+    /// Args:
+    ///     input: Input operand
+    ///     axes: Axes to reduce (default: all axes)
+    ///     keep_dimensions: Keep reduced dimensions with size 1 (default: false)
+    ///
+    /// Returns:
+    ///     MLOperand: The output operand
+    #[pyo3(signature = (input, axes=None, keep_dimensions=false))]
+    fn reduce_min(
+        &mut self,
+        input: &PyMLOperand,
+        axes: Option<Vec<u32>>,
+        keep_dimensions: bool,
+    ) -> PyResult<PyMLOperand> {
+        self.reduce_op("reduceMin", input, axes, keep_dimensions)
+    }
+
+    /// Reduce Product operation
+    ///
+    /// Reduces the input tensor by computing the product of elements along specified axes.
+    ///
+    /// Args:
+    ///     input: Input operand
+    ///     axes: Axes to reduce (default: all axes)
+    ///     keep_dimensions: Keep reduced dimensions with size 1 (default: false)
+    ///
+    /// Returns:
+    ///     MLOperand: The output operand
+    #[pyo3(signature = (input, axes=None, keep_dimensions=false))]
+    fn reduce_product(
+        &mut self,
+        input: &PyMLOperand,
+        axes: Option<Vec<u32>>,
+        keep_dimensions: bool,
+    ) -> PyResult<PyMLOperand> {
+        self.reduce_op("reduceProduct", input, axes, keep_dimensions)
+    }
+
+    /// Reduce L1 operation
+    ///
+    /// Reduces the input tensor by computing the L1 norm (sum of absolute values) along specified axes.
+    ///
+    /// Args:
+    ///     input: Input operand
+    ///     axes: Axes to reduce (default: all axes)
+    ///     keep_dimensions: Keep reduced dimensions with size 1 (default: false)
+    ///
+    /// Returns:
+    ///     MLOperand: The output operand
+    #[pyo3(signature = (input, axes=None, keep_dimensions=false))]
+    fn reduce_l1(
+        &mut self,
+        input: &PyMLOperand,
+        axes: Option<Vec<u32>>,
+        keep_dimensions: bool,
+    ) -> PyResult<PyMLOperand> {
+        self.reduce_op("reduceL1", input, axes, keep_dimensions)
+    }
+
+    /// Reduce L2 operation
+    ///
+    /// Reduces the input tensor by computing the L2 norm (Euclidean norm) along specified axes.
+    ///
+    /// Args:
+    ///     input: Input operand
+    ///     axes: Axes to reduce (default: all axes)
+    ///     keep_dimensions: Keep reduced dimensions with size 1 (default: false)
+    ///
+    /// Returns:
+    ///     MLOperand: The output operand
+    #[pyo3(signature = (input, axes=None, keep_dimensions=false))]
+    fn reduce_l2(
+        &mut self,
+        input: &PyMLOperand,
+        axes: Option<Vec<u32>>,
+        keep_dimensions: bool,
+    ) -> PyResult<PyMLOperand> {
+        self.reduce_op("reduceL2", input, axes, keep_dimensions)
+    }
+
+    /// Reduce Log Sum operation
+    ///
+    /// Reduces the input tensor by computing the natural logarithm of the sum along specified axes.
+    ///
+    /// Args:
+    ///     input: Input operand
+    ///     axes: Axes to reduce (default: all axes)
+    ///     keep_dimensions: Keep reduced dimensions with size 1 (default: false)
+    ///
+    /// Returns:
+    ///     MLOperand: The output operand
+    #[pyo3(signature = (input, axes=None, keep_dimensions=false))]
+    fn reduce_log_sum(
+        &mut self,
+        input: &PyMLOperand,
+        axes: Option<Vec<u32>>,
+        keep_dimensions: bool,
+    ) -> PyResult<PyMLOperand> {
+        self.reduce_op("reduceLogSum", input, axes, keep_dimensions)
+    }
+
+    /// Reduce Log Sum Exp operation
+    ///
+    /// Reduces the input tensor by computing the log of the sum of exponentials along specified axes.
+    ///
+    /// Args:
+    ///     input: Input operand
+    ///     axes: Axes to reduce (default: all axes)
+    ///     keep_dimensions: Keep reduced dimensions with size 1 (default: false)
+    ///
+    /// Returns:
+    ///     MLOperand: The output operand
+    #[pyo3(signature = (input, axes=None, keep_dimensions=false))]
+    fn reduce_log_sum_exp(
+        &mut self,
+        input: &PyMLOperand,
+        axes: Option<Vec<u32>>,
+        keep_dimensions: bool,
+    ) -> PyResult<PyMLOperand> {
+        self.reduce_op("reduceLogSumExp", input, axes, keep_dimensions)
+    }
+
+    /// Reduce Sum Square operation
+    ///
+    /// Reduces the input tensor by computing the sum of squares along specified axes.
+    ///
+    /// Args:
+    ///     input: Input operand
+    ///     axes: Axes to reduce (default: all axes)
+    ///     keep_dimensions: Keep reduced dimensions with size 1 (default: false)
+    ///
+    /// Returns:
+    ///     MLOperand: The output operand
+    #[pyo3(signature = (input, axes=None, keep_dimensions=false))]
+    fn reduce_sum_square(
+        &mut self,
+        input: &PyMLOperand,
+        axes: Option<Vec<u32>>,
+        keep_dimensions: bool,
+    ) -> PyResult<PyMLOperand> {
+        self.reduce_op("reduceSumSquare", input, axes, keep_dimensions)
+    }
+
     /// Build the computational graph
     ///
     /// Args:
@@ -1147,6 +1359,64 @@ impl PyMLGraphBuilder {
             input_operands: vec![x.id],
             output_operand: output_id,
             attributes: serde_json::json!({}),
+            label: None,
+        };
+
+        self.operations.push(operation);
+
+        let output_operand = Operand {
+            descriptor: output_descriptor.clone(),
+            kind: OperandKind::Output,
+            name: None,
+        };
+        self.operands.push(output_operand);
+
+        let py_operand = PyMLOperand::new(output_id, output_descriptor, OperandKind::Output, None);
+        self.operand_map.insert(output_id, py_operand.clone());
+
+        Ok(py_operand)
+    }
+
+    /// Helper for reduction operations
+    fn reduce_op(
+        &mut self,
+        op_type: &str,
+        input: &PyMLOperand,
+        axes: Option<Vec<u32>>,
+        keep_dimensions: bool,
+    ) -> PyResult<PyMLOperand> {
+        use crate::shape_inference::{ReduceOptions, infer_reduce_shape};
+
+        // Create reduction options
+        let options = ReduceOptions {
+            axes: axes.clone().unwrap_or_default(),
+            keep_dimensions,
+        };
+
+        // Infer output shape
+        let output_shape = infer_reduce_shape(&input.descriptor.shape, &options)
+            .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+
+        let output_descriptor = OperandDescriptor {
+            data_type: input.descriptor.data_type,
+            shape: output_shape,
+            pending_permutation: Vec::new(),
+        };
+
+        let output_id = self.next_operand_id;
+        self.next_operand_id += 1;
+
+        // Store parameters as JSON attributes
+        let attributes = serde_json::json!({
+            "axes": axes.unwrap_or_default(),
+            "keepDimensions": keep_dimensions,
+        });
+
+        let operation = Operation {
+            op_type: op_type.to_string(),
+            input_operands: vec![input.id],
+            output_operand: output_id,
+            attributes,
             label: None,
         };
 
