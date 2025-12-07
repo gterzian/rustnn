@@ -19,7 +19,7 @@ def _has_onnx_runtime():
         return False
     try:
         ml = webnn.ML()
-        ctx = ml.create_context(device_type="cpu")
+        ctx = ml.create_context(power_preference="default", accelerated=False)
         builder = ctx.create_graph_builder()
         x = builder.input("x", [1, 1], "float32")
         y = builder.relu(x)
@@ -46,7 +46,7 @@ def ml():
 @pytest.fixture
 def context(ml):
     """Create ML context"""
-    return ml.create_context(device_type="cpu")
+    return ml.create_context(power_preference="default", accelerated=False)
 
 
 @pytest.fixture
@@ -63,13 +63,19 @@ def test_ml_creation():
 
 def test_context_creation(ml):
     """Test context creation with different options"""
-    ctx = ml.create_context(device_type="cpu", power_preference="default")
-    assert ctx.device_type == "cpu"
+    # Test CPU-only context (accelerated=False)
+    ctx = ml.create_context(power_preference="default", accelerated=False)
+    assert ctx.accelerated == False
     assert ctx.power_preference == "default"
 
-    ctx_gpu = ml.create_context(device_type="gpu", power_preference="high-performance")
-    assert ctx_gpu.device_type == "gpu"
-    assert ctx_gpu.power_preference == "high-performance"
+    # Test accelerated context with high performance
+    ctx_accel = ml.create_context(power_preference="high-performance", accelerated=True)
+    assert ctx_accel.power_preference == "high-performance"
+    # Note: accelerated may be True or False depending on platform capabilities
+
+    # Test accelerated context with low power (NPU preferred)
+    ctx_low_power = ml.create_context(power_preference="low-power", accelerated=True)
+    assert ctx_low_power.power_preference == "low-power"
 
 
 def test_graph_builder_creation(context):
@@ -699,12 +705,12 @@ async def test_async_dispatch_with_actual_computation(async_context):
 @pytest.mark.asyncio
 async def test_async_context_properties(async_context):
     """Test that async context preserves underlying context properties"""
-    assert async_context.device_type == "cpu"
+    assert async_context.accelerated == False  # CPU-only from fixture
     assert async_context.power_preference == "default"
-    
+
     # Test synchronous methods still work
     builder = async_context.create_graph_builder()
     assert builder is not None
-    
+
     tensor = async_context.create_tensor([2, 2], "float32")
     assert tensor is not None

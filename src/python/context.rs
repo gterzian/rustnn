@@ -40,25 +40,28 @@ impl PyML {
     /// Create a new ML context
     ///
     /// Args:
-    ///     device_type: Device type ("cpu", "gpu", or "npu")
-    ///     power_preference: Power preference ("default", "high-performance", or "low-power")
+    ///     power_preference: Power preference hint ("default", "high-performance", or "low-power")
+    ///     accelerated: Whether to use GPU/NPU acceleration (default: true)
     ///
     /// Returns:
     ///     MLContext: A new context for graph operations
-    #[pyo3(signature = (device_type="cpu", power_preference="default"))]
-    fn create_context(&self, device_type: &str, power_preference: &str) -> PyResult<PyMLContext> {
-        Ok(PyMLContext::new(
-            device_type.to_string(),
-            power_preference.to_string(),
-        ))
+    ///
+    /// Note:
+    ///     The accelerated parameter is a hint, not a guarantee. The platform
+    ///     decides the actual device allocation based on runtime conditions.
+    ///     Query context.accelerated after creation to check if acceleration is available.
+    #[pyo3(signature = (power_preference="default", accelerated=true))]
+    fn create_context(&self, power_preference: &str, accelerated: bool) -> PyResult<PyMLContext> {
+        Ok(PyMLContext::new(power_preference.to_string(), accelerated))
     }
 }
 
 /// MLContext manages the execution environment for neural network graphs
 #[pyclass(name = "MLContext")]
 pub struct PyMLContext {
-    device_type: String,
     power_preference: String,
+    accelerated_requested: bool,
+    accelerated_available: bool,
     backend: Backend,
 }
 
@@ -256,34 +259,43 @@ impl PyMLContext {
         Ok(())
     }
 
-    /// Get device type
-    #[getter]
-    fn device_type(&self) -> String {
-        self.device_type.clone()
-    }
-
-    /// Get power preference
+    /// Get power preference hint
     #[getter]
     fn power_preference(&self) -> String {
         self.power_preference.clone()
     }
 
+    /// Check if GPU/NPU acceleration is available
+    ///
+    /// Returns:
+    ///     bool: True if the platform can provide GPU or NPU resources
+    ///
+    /// Note:
+    ///     This indicates platform capability, not a guarantee of device allocation.
+    ///     The actual execution may still use CPU if needed.
+    #[getter]
+    fn accelerated(&self) -> bool {
+        self.accelerated_available
+    }
+
     fn __repr__(&self) -> String {
         format!(
-            "MLContext(device='{}', power='{}')",
-            self.device_type, self.power_preference
+            "MLContext(accelerated={}, power='{}')",
+            self.accelerated_available, self.power_preference
         )
     }
 }
 
 impl PyMLContext {
-    fn new(device_type: String, power_preference: String) -> Self {
-        // Select backend based on device_type and available features
-        let backend = Self::select_backend(&device_type, &power_preference);
+    fn new(power_preference: String, accelerated_requested: bool) -> Self {
+        // Select backend based on accelerated preference and power preference
+        let (backend, accelerated_available) =
+            Self::select_backend(accelerated_requested, &power_preference);
 
         Self {
-            device_type,
             power_preference,
+            accelerated_requested,
+            accelerated_available,
             backend,
         }
     }
@@ -447,29 +459,43 @@ impl PyMLContext {
         Ok(result.into())
     }
 
-    /// Select the appropriate backend based on device type and available features
-    fn select_backend(device_type: &str, _power_preference: &str) -> Backend {
-        match device_type {
-            "cpu" => {
-                // Prefer ONNX Runtime for CPU execution
-                #[cfg(feature = "onnx-runtime")]
-                {
-                    Backend::OnnxCpu
-                }
-                #[cfg(not(feature = "onnx-runtime"))]
-                {
-                    Backend::None
-                }
+    /// Select the appropriate backend based on accelerated preference and power hint
+    ///
+    /// Returns: (Backend, accelerated_available)
+    /// - Backend: The selected backend to use
+    /// - accelerated_available: true if GPU/NPU acceleration is available
+    ///
+    /// Selection logic per WebNN Device Selection Explainer:
+    /// - accelerated=true + power="low-power" → NPU > GPU > CPU
+    /// - accelerated=true + power="high-performance" → GPU > NPU > CPU
+    /// - accelerated=true + power="default" → GPU > NPU > CPU
+    /// - accelerated=false → CPU only
+    fn select_backend(accelerated: bool, power_preference: &str) -> (Backend, bool) {
+        if !accelerated {
+            // User explicitly requested CPU-only execution
+            #[cfg(feature = "onnx-runtime")]
+            {
+                return (Backend::OnnxCpu, false);
             }
-            "gpu" => {
-                // On macOS, prefer CoreML for GPU; otherwise use ONNX
+            #[cfg(not(feature = "onnx-runtime"))]
+            {
+                return (Backend::None, false);
+            }
+        }
+
+        // Accelerated execution requested - select based on power preference
+        match power_preference {
+            "low-power" => {
+                // Prefer NPU (Neural Engine on macOS) for low power
                 #[cfg(all(target_os = "macos", feature = "coreml-runtime"))]
                 {
-                    Backend::CoreML
+                    return (Backend::CoreML, true);
                 }
+
+                // Fallback to GPU if NPU not available
                 #[cfg(all(not(target_os = "macos"), feature = "onnx-runtime"))]
                 {
-                    Backend::OnnxGpu
+                    return (Backend::OnnxGpu, true);
                 }
                 #[cfg(all(
                     target_os = "macos",
@@ -477,34 +503,52 @@ impl PyMLContext {
                     feature = "onnx-runtime"
                 ))]
                 {
-                    Backend::OnnxGpu
+                    return (Backend::OnnxGpu, true);
                 }
+
+                // No acceleration available, fallback to CPU
+                #[cfg(feature = "onnx-runtime")]
+                {
+                    return (Backend::OnnxCpu, false);
+                }
+                #[cfg(not(feature = "onnx-runtime"))]
+                {
+                    return (Backend::None, false);
+                }
+            }
+            "high-performance" | "default" => {
+                // Prefer GPU for high performance or default
+                #[cfg(feature = "onnx-runtime")]
+                {
+                    return (Backend::OnnxGpu, true);
+                }
+
+                // Fallback to NPU if GPU not available
+                #[cfg(all(
+                    target_os = "macos",
+                    feature = "coreml-runtime",
+                    not(feature = "onnx-runtime")
+                ))]
+                {
+                    return (Backend::CoreML, true);
+                }
+
+                // No acceleration available, fallback to CPU
                 #[cfg(not(feature = "onnx-runtime"))]
                 #[cfg(not(feature = "coreml-runtime"))]
                 {
-                    Backend::None
-                }
-            }
-            "npu" => {
-                // NPU (Neural Processing Unit) - use CoreML on macOS (Neural Engine)
-                #[cfg(all(target_os = "macos", feature = "coreml-runtime"))]
-                {
-                    Backend::CoreML
-                }
-                #[cfg(any(not(target_os = "macos"), not(feature = "coreml-runtime")))]
-                {
-                    Backend::None
+                    return (Backend::None, false);
                 }
             }
             _ => {
-                // Unknown device type, fallback to ONNX CPU if available
+                // Unknown power preference, use default behavior (GPU preferred)
                 #[cfg(feature = "onnx-runtime")]
                 {
-                    Backend::OnnxCpu
+                    return (Backend::OnnxGpu, true);
                 }
                 #[cfg(not(feature = "onnx-runtime"))]
                 {
-                    Backend::None
+                    return (Backend::None, false);
                 }
             }
         }

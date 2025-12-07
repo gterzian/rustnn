@@ -77,9 +77,10 @@ Or use directly from this repository.
 import webnn
 import numpy as np
 
-# Create ML context - device_type controls which backend is used
+# Create ML context - use hints for device selection
 ml = webnn.ML()
-context = ml.create_context(device_type="cpu")  # Selects ONNX Runtime CPU backend
+context = ml.create_context(accelerated=False)  # CPU-only execution
+# Or: context = ml.create_context(accelerated=True)  # Request GPU/NPU if available
 
 # Create graph builder
 builder = context.create_graph_builder()
@@ -97,7 +98,7 @@ graph = builder.build({"output": output})
 x_data = np.array([[1, -2, 3], [4, -5, 6]], dtype=np.float32)
 y_data = np.array([[-1, 2, -3], [-4, 5, -6]], dtype=np.float32)
 
-# Execute: converts to backend-specific format (ONNX for CPU) and runs
+# Execute: converts to backend-specific format and runs
 results = context.compute(graph, {"x": x_data, "y": y_data})
 print(results["output"])  # Actual computed values from ONNX Runtime
 
@@ -107,25 +108,37 @@ context.convert_to_onnx(graph, "model.onnx")
 
 ### Backend Selection
 
-The `device_type` parameter at context creation controls which execution backend is used:
+Following the [W3C WebNN Device Selection spec](https://github.com/webmachinelearning/webnn/blob/main/device-selection-explainer.md), device selection uses **hints** rather than explicit device types:
 
 ```python
-# CPU execution - uses ONNX Runtime CPU backend
-context = ml.create_context(device_type="cpu")
+# Request GPU/NPU acceleration (default)
+context = ml.create_context(accelerated=True, power_preference="default")
+print(f"Accelerated: {context.accelerated}")  # Check if acceleration is available
 
-# GPU execution - uses CoreML on macOS, ONNX Runtime GPU elsewhere
-context = ml.create_context(device_type="gpu")
+# Request low-power execution (prefers NPU over GPU)
+context = ml.create_context(accelerated=True, power_preference="low-power")
 
-# NPU execution - uses CoreML Neural Engine on Apple Silicon (macOS only)
-context = ml.create_context(device_type="npu")
+# Request high-performance execution (prefers GPU)
+context = ml.create_context(accelerated=True, power_preference="high-performance")
+
+# CPU-only execution (no acceleration)
+context = ml.create_context(accelerated=False)
 ```
 
-**Backend Selection Rules:**
-- **"cpu"** → ONNX Runtime CPU backend (cross-platform)
-- **"gpu"** → CoreML on macOS (GPU/Neural Engine), ONNX Runtime GPU elsewhere
-- **"npu"** → CoreML Neural Engine on Apple Silicon, not available on other platforms
+**Device Selection Logic:**
+- `accelerated=True` + `power_preference="low-power"` → **NPU** > GPU > CPU
+- `accelerated=True` + `power_preference="high-performance"` → **GPU** > NPU > CPU
+- `accelerated=True` + `power_preference="default"` → **GPU** > NPU > CPU
+- `accelerated=False` → **CPU only**
 
-The graph compilation (`builder.build()`) creates a **backend-agnostic representation**. The backend-specific conversion happens automatically during `compute()` based on the context's selected backend.
+**Platform-Specific Backends:**
+- **NPU**: CoreML Neural Engine (Apple Silicon macOS only)
+- **GPU**: ONNX Runtime GPU (cross-platform) or CoreML GPU (macOS)
+- **CPU**: ONNX Runtime CPU (cross-platform)
+
+**Important:** The `accelerated` property indicates **platform capability**, not a guarantee. Query `context.accelerated` after creation to check if GPU/NPU resources are available. The platform controls actual device allocation based on runtime conditions.
+
+The graph compilation (`builder.build()`) creates a **backend-agnostic representation**. Backend-specific conversion happens automatically during `compute()` based on the context's selected backend.
 
 ### Async Execution
 
@@ -139,7 +152,7 @@ import webnn
 async def main():
     # Create context
     ml = webnn.ML()
-    context = ml.create_context(device_type="cpu")
+    context = ml.create_context(accelerated=False)
     async_context = webnn.AsyncMLContext(context)
 
     # Build graph
@@ -194,30 +207,30 @@ The Python API implements the [W3C WebNN specification](https://www.w3.org/TR/we
 Entry point for the WebNN API.
 
 **Methods:**
-- `create_context(device_type="cpu", power_preference="default")`: Create an execution context
-  - `device_type`: Selects the backend - "cpu" (ONNX Runtime), "gpu" (CoreML/ONNX), "npu" (CoreML Neural Engine)
-  - `power_preference`: Hint for power/performance tradeoffs
+- `create_context(accelerated=True, power_preference="default")`: Create an execution context
+  - `accelerated`: Request GPU/NPU acceleration (default: True)
+  - `power_preference`: Hint for power/performance tradeoffs ("default", "high-performance", "low-power")
 
 ```python
 ml = webnn.ML()
-context = ml.create_context(device_type="cpu", power_preference="default")
+context = ml.create_context(accelerated=False, power_preference="default")
 ```
 
 #### `webnn.MLContext`
 Execution context for neural network operations.
 
 **Properties:**
-- `device_type`: The device type ("cpu", "gpu", "npu") - determines which backend is used
-- `power_preference`: Power preference setting ("default", "high-performance", "low-power")
+- `accelerated` (readonly): Boolean indicating if GPU/NPU acceleration is available
+- `power_preference` (readonly): Power preference hint ("default", "high-performance", "low-power")
 
 **Methods:**
 - `create_graph_builder()`: Create a new graph builder
 - `compute(graph, inputs, outputs=None)`: Execute a compiled graph with actual computation
-  - Uses the backend selected at context creation (based on device_type)
+  - Uses the backend selected at context creation (based on accelerated + power_preference)
   - Automatically converts backend-agnostic graph to backend-specific format
-  - "cpu" device → ONNX Runtime CPU backend
-  - "gpu" device → CoreML (macOS) or ONNX Runtime GPU
-  - "npu" device → CoreML Neural Engine (Apple Silicon)
+  - accelerated=False → ONNX Runtime CPU backend
+  - accelerated=True + low-power → CoreML NPU (macOS) or ONNX Runtime GPU
+  - accelerated=True + high-performance → ONNX Runtime GPU or CoreML GPU
   - Accepts numpy arrays as inputs
   - Returns dictionary of numpy arrays as outputs
 - `convert_to_onnx(graph, output_path)`: Export graph to ONNX file (for deployment/inspection)
@@ -231,7 +244,7 @@ Async wrapper for MLContext providing WebNN-compliant asynchronous execution.
 
 **Creation:**
 ```python
-context = ml.create_context(device_type="cpu")
+context = ml.create_context(accelerated=False)
 async_context = webnn.AsyncMLContext(context)
 ```
 
@@ -250,7 +263,7 @@ async_context = webnn.AsyncMLContext(context)
 - `write_tensor(tensor, data)`: Synchronous tensor write
 
 **Properties:**
-- `device_type`: The device type
+- `accelerated`: Boolean indicating if GPU/NPU acceleration is available
 - `power_preference`: Power preference setting
 
 #### `webnn.MLGraphBuilder`
@@ -458,10 +471,11 @@ make validate-all-env  # Run full test pipeline
 - No backend-specific artifacts at this stage
 
 **2. Runtime Backend Selection (WebNN Spec-Compliant)**
-- Backend selection happens at **context creation** via `device_type` parameter
-- "cpu" → ONNX Runtime CPU
-- "gpu" → CoreML (macOS) or ONNX Runtime GPU
-- "npu" → CoreML Neural Engine (Apple Silicon)
+- Backend selection happens at **context creation** via `accelerated` and `power_preference` hints
+- `accelerated=False` → ONNX Runtime CPU
+- `accelerated=True` + `power="high-performance"` → GPU preferred (ONNX or CoreML)
+- `accelerated=True` + `power="low-power"` → NPU preferred (CoreML Neural Engine on Apple Silicon)
+- Platform autonomously selects actual device based on availability and runtime conditions
 - Selection logic in `PyMLContext::select_backend()`
 
 **3. Lazy Backend Conversion**

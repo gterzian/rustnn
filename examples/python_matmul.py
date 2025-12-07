@@ -16,9 +16,10 @@ def main():
     print("WebNN Matrix Multiplication Example")
     print("=" * 50)
 
-    # Create ML context
+    # Create ML context (CPU-only for this example)
     ml = webnn.ML()
-    context = ml.create_context(device_type="cpu")
+    context = ml.create_context(power_preference="default", accelerated=False)
+    print(f"Context: accelerated={context.accelerated}, power={context.power_preference}\n")
     builder = context.create_graph_builder()
 
     # Define matrix multiplication: output = relu(matmul(input, weights) + bias)

@@ -17,10 +17,12 @@ def main():
     print("WebNN Python API Example")
     print("=" * 50)
 
-    # Create ML context
+    # Create ML context (CPU-only for this example)
     ml = webnn.ML()
-    context = ml.create_context(device_type="cpu", power_preference="default")
+    context = ml.create_context(power_preference="default", accelerated=False)
     print(f"\nCreated context: {context}")
+    print(f"  Accelerated: {context.accelerated}")
+    print(f"  Power preference: {context.power_preference}")
 
     # Create graph builder
     builder = context.create_graph_builder()
