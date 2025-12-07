@@ -71,6 +71,100 @@ print(results["output"])  # Contains actual computed values
 context.convert_to_onnx(graph, "model.onnx")
 ```
 
+## Async Execution
+
+WebNN supports asynchronous execution following the W3C specification. Use `AsyncMLContext` for non-blocking operations:
+
+```python
+import asyncio
+import numpy as np
+import webnn
+
+async def main():
+    # Create context
+    ml = webnn.ML()
+    context = ml.create_context(device_type="cpu")
+    async_context = webnn.AsyncMLContext(context)
+
+    # Build graph
+    builder = async_context.create_graph_builder()
+    x = builder.input("x", [2, 3], "float32")
+    y = builder.input("y", [2, 3], "float32")
+    z = builder.add(x, y)
+    output = builder.relu(z)
+    graph = builder.build({"output": output})
+
+    # Async dispatch (non-blocking execution)
+    x_data = np.array([[1, -2, 3], [4, -5, 6]], dtype=np.float32)
+    y_data = np.array([[-1, 2, -3], [-4, 5, -6]], dtype=np.float32)
+    await async_context.dispatch(graph, {"x": x_data, "y": y_data})
+
+    print("Graph executed asynchronously!")
+
+# Run async code
+asyncio.run(main())
+```
+
+### Async Tensor Operations
+
+```python
+import asyncio
+import numpy as np
+import webnn
+
+async def tensor_example():
+    ml = webnn.ML()
+    context = ml.create_context(device_type="cpu")
+    async_context = webnn.AsyncMLContext(context)
+
+    # Create tensor
+    tensor = async_context.create_tensor([2, 3], "float32")
+
+    # Write data asynchronously
+    data = np.array([[1, 2, 3], [4, 5, 6]], dtype=np.float32)
+    await async_context.write_tensor_async(tensor, data)
+
+    # Read data asynchronously
+    result = await async_context.read_tensor_async(tensor)
+    print(f"Tensor data: {result}")
+
+asyncio.run(tensor_example())
+```
+
+### Concurrent Operations
+
+```python
+import asyncio
+import numpy as np
+import webnn
+
+async def concurrent_example():
+    ml = webnn.ML()
+    context = ml.create_context(device_type="cpu")
+    async_context = webnn.AsyncMLContext(context)
+
+    # Create multiple tensors
+    tensors = [async_context.create_tensor([2, 2], "float32") for _ in range(3)]
+
+    # Write to all tensors concurrently
+    async def write_tensor(tensor, value):
+        data = np.full((2, 2), value, dtype=np.float32)
+        await async_context.write_tensor_async(tensor, data)
+
+    # Execute all writes concurrently
+    await asyncio.gather(*[write_tensor(t, i) for i, t in enumerate(tensors)])
+
+    # Read from all tensors concurrently
+    results = await asyncio.gather(*[
+        async_context.read_tensor_async(t) for t in tensors
+    ])
+
+    for i, result in enumerate(results):
+        print(f"Tensor {i}: {result}")
+
+asyncio.run(concurrent_example())
+```
+
 ## API Overview
 
 ### Main Classes
@@ -100,6 +194,36 @@ Execution context for neural network operations.
   - Falls back to zeros if ONNX runtime not available
 - `convert_to_onnx(graph, output_path)`: Convert graph to ONNX format
 - `convert_to_coreml(graph, output_path)`: Convert graph to CoreML format (macOS only)
+- `create_tensor(shape, data_type)`: Create a tensor for explicit memory management
+- `read_tensor(tensor)`: Read tensor data (synchronous)
+- `write_tensor(tensor, data)`: Write tensor data (synchronous)
+
+#### `webnn.AsyncMLContext`
+Async wrapper for MLContext providing WebNN-compliant asynchronous execution.
+
+**Creation:**
+```python
+context = ml.create_context(device_type="cpu")
+async_context = webnn.AsyncMLContext(context)
+```
+
+**Async Methods:**
+- `async dispatch(graph, inputs, outputs=None)`: Execute graph asynchronously (WebNN spec-compliant)
+  - Returns immediately, execution happens in background
+  - Use for non-blocking computation
+- `async read_tensor_async(tensor)`: Read tensor data asynchronously
+- `async write_tensor_async(tensor, data)`: Write tensor data asynchronously
+
+**Synchronous Methods (pass-through):**
+- `create_graph_builder()`: Create a new graph builder
+- `create_tensor(shape, data_type)`: Create a tensor
+- `compute(graph, inputs, outputs=None)`: Synchronous execution
+- `read_tensor(tensor)`: Synchronous tensor read
+- `write_tensor(tensor, data)`: Synchronous tensor write
+
+**Properties:**
+- `device_type`: The device type
+- `power_preference`: Power preference setting
 
 #### `webnn.MLGraphBuilder`
 Builder for constructing computational graphs.

@@ -418,13 +418,10 @@ The `scripts/convert_onnx_to_webnn.py` script converts ONNX models to WebNN JSON
 The following operations have been approved for Claude Code to execute without requiring additional user confirmation:
 
 ### Build & Development
-- `cargo check` - Run Rust type checking
-- `cargo build` - Build the Rust project
-- `cargo fmt` - Format Rust code according to style guidelines
-- `cargo test` - Run Rust test suite
-- `pip install` - Install Python packages
-- `maturin develop` - Install Python package in development mode
-- `make` - Run any Makefile target (all make commands are approved)
+- `cargo *` - All Cargo commands (check, build, fmt, test, clean, clippy, doc, etc.)
+- `pip *` - All pip commands (install, uninstall, list, freeze, etc.)
+- `maturin *` - All maturin commands (develop, build, publish, etc.)
+- `make *` - All Makefile targets approved
 
 ### Python Execution & Testing
 - `python` - Run Python scripts
@@ -443,12 +440,8 @@ The following operations have been approved for Claude Code to execute without r
 - `cat` - Read file contents
 
 ### Git Operations
-- `git status` - Check repository status
-- `git add` - Stage files for commit
-- `git commit` - Create commits
-- `git push` - Push commits to remote
-- `git tag` - Create and manage version tags
-- `git show` - Display commit information
+- `git *` - All git commands approved (status, add, commit, push, pull, checkout, branch, tag, log, diff, show, reset, rebase, merge, etc.)
+  - Note: Destructive operations (force push to main, hard reset) should still be used cautiously
 
 ### GitHub Operations
 - `gh run list` - List GitHub Actions workflow runs
