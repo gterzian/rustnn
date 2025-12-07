@@ -13,7 +13,7 @@ ORT_DIR ?= target/onnxruntime
 ORT_LIB_DIR ?= $(ORT_DIR)/onnxruntime-osx-arm64-$(ORT_VERSION)/lib
 ORT_LIB_LOCATION ?= $(ORT_LIB_DIR)
 .PHONY: build test fmt run viz onnx coreml coreml-validate onnx-validate validate-all-env \
-	python-dev python-build python-test python-clean python-example \
+	python-dev python-build python-test python-test-wpt python-clean python-example \
 	docs-serve docs-build docs-clean ci-docs \
 	help clean-all
 
@@ -90,8 +90,12 @@ python-build:
 	maturin build --features python,onnx-runtime --release
 
 python-test: python-dev
-	@echo "Running Python tests..."
+	@echo "Running Python tests (includes WPT conformance tests)..."
 	DYLD_LIBRARY_PATH=$(ORT_LIB_DIR) python -m pytest tests/ -v
+
+python-test-wpt: python-dev
+	@echo "Running WPT conformance tests only..."
+	DYLD_LIBRARY_PATH=$(ORT_LIB_DIR) python -m pytest tests/test_wpt_conformance.py -v
 
 python-example: python-dev
 	@echo "Running Python examples..."
@@ -168,7 +172,8 @@ help:
 	@echo "Python API:"
 	@echo "  python-dev         - Install Python package in development mode"
 	@echo "  python-build       - Build Python wheel"
-	@echo "  python-test        - Run Python tests"
+	@echo "  python-test        - Run all Python tests (includes WPT tests)"
+	@echo "  python-test-wpt    - Run WPT conformance tests only"
 	@echo "  python-example     - Run Python examples"
 	@echo "  python-clean       - Clean Python artifacts"
 	@echo ""
