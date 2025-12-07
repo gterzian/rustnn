@@ -291,14 +291,63 @@ examples/
 4. **Add conditional compilation** in `executors/mod.rs`
 5. **Wire up in CLI** (`main.rs`) if needed
 
-### Adding New Graph Operations
+### Adding New WebNN Operations (Standard Workflow)
 
-Currently, operations are validated but not typed. To add operation-specific validation:
+**Complete implementation checklist for adding operations:**
 
-1. **Extend** `Operation` struct in `graph.rs` if needed
-2. **Add validation logic** in `validator.rs`
-3. **Update converters** to handle the new operation
-4. **Add test cases** with example graphs
+1. **Shape Inference** (`src/shape_inference.rs`):
+   - Add `infer_<operation>_shape()` function
+   - Add Rust unit tests for shape inference
+   - Handle all parameter variations (layouts, axes, etc.)
+
+2. **Python API** (`src/python/graph_builder.rs`):
+   - Add method following WebNN spec signature
+   - Use PyO3 `#[pyo3(signature = (...))]` for optional parameters
+   - Create `OperandDescriptor` with `pending_permutation: Vec::new()`
+   - Call shape inference function
+   - Store operation with all parameters in `attributes` JSON
+
+3. **ONNX Converter** (`src/converters/onnx.rs`):
+   - Add operation name mapping in `onnx_op_type()`
+   - Add attribute handling if needed (see `create_conv2d_attributes()` example)
+
+4. **CoreML Converter** (`src/converters/coreml.rs`) *[optional]*:
+   - Add layer creation (may not have direct mapping)
+   - CoreML support can be deferred for complex operations
+
+5. **Tests** (`tests/test_python_api.py`):
+   - Add 3-5 tests covering:
+     - Basic usage
+     - Optional parameters (scale, bias, etc.)
+     - Different layouts/shapes
+     - Edge cases and validation
+   - Run: `python -m pytest tests/test_python_api.py -v`
+
+6. **Documentation** (`docs/api-reference.md`):
+   - Add operation to appropriate section
+   - Include parameters, shape inference, formula
+   - Add 2-3 practical examples
+   - Show common use cases
+
+7. **Update TODO.txt**:
+   - Mark operation as done with implementation summary
+
+8. **Rebuild Python module**:
+   ```bash
+   maturin develop --features python
+   ```
+
+9. **Run all tests before committing**:
+   ```bash
+   cargo test --lib        # Rust tests
+   pytest tests/ -v        # Python tests
+   cargo fmt              # Format code
+   ```
+
+**Example PR titles:**
+- "Add batch_normalization operation"
+- "Add element-wise operations (abs, exp, log)"
+- "Add reduction operations (reduceSum, reduceMean)"
 
 ### Adding Protobuf Definitions
 
@@ -534,44 +583,52 @@ git add src/python/context.rs
 git commit -m "Update context implementation"
 ```
 
-## Git Commit Attribution Policy
+## Implemented Operations (as of 2025-12-07)
 
-**CRITICAL: All commits must use ONLY the user's identity - NEVER add Claude attribution.**
+### ✅ Fully Implemented Operations
 
-When creating git commits:
-- ❌ **NEVER** add "Co-Authored-By: Claude <noreply@anthropic.com>"
-- ❌ **NEVER** add "🤖 Generated with [Claude Code](https://claude.com/claude-code)"
-- ❌ **NEVER** add any other Claude attribution or signature
-- ✅ **ALWAYS** use ONLY the user's git identity from `git config user.name` and `git config user.email`
-- ✅ **NEVER** modify git config - use the existing user configuration
+**Binary Operations:**
+- `add`, `sub`, `mul`, `div`, `matmul`
+- Full NumPy-style broadcasting support
+- Batched matmul with proper shape inference
 
-**Rationale:** The user's commits should reflect their own work and identity. Claude Code is a tool that assists the user, but the commits belong to the user, not to Claude.
+**Convolution Operations:**
+- `conv2d` - 2D convolution with strides, dilations, padding, groups
+- `conv_transpose2d` - Transposed convolution with output padding/sizes
+- Supports NCHW and NHWC layouts
+- Depthwise convolution via groups parameter
 
-**Example of correct commit:**
-```
-git commit -m "Add feature X
+**Pooling Operations:**
+- `average_pool2d`, `max_pool2d` - 2D pooling with window, stride, dilation, padding
+- `global_average_pool`, `global_max_pool` - Global pooling (reduces spatial to 1x1)
+- Supports NCHW and NHWC layouts
 
-- Implementation details
-- Test coverage
-- Documentation updates"
-```
+**Normalization Operations:**
+- `batch_normalization` - Batch norm with mean, variance, scale, bias, epsilon
+- `instance_normalization` - Instance norm with scale, bias, epsilon
+- `layer_normalization` - Layer norm with scale, bias, epsilon, axes (for transformers)
 
-**Example of INCORRECT commit (DO NOT DO THIS):**
-```
-git commit -m "Add feature X
+**Activation Functions:**
+- `relu`, `sigmoid`, `tanh`, `softmax`
 
-- Implementation details
+**Shape Operations:**
+- `reshape` - Shape transformation with element count validation
+- `input`, `constant` - Input/constant operand creation
 
-🤖 Generated with [Claude Code](https://claude.com/claude-code)
+**Total Tests:** 91 tests (79 passing, 12 skipped without ONNX runtime)
 
-Co-Authored-By: Claude <noreply@anthropic.com>"
-```
+### 🚧 Not Yet Implemented
+
+High priority: Reduction operations (reduceSum, reduceMean, etc.), element-wise ops (abs, exp, log, etc.)
+See TODO.txt for complete list.
 
 ## Resources
 
 - **README.md**: Complete documentation including Python API, Rust CLI, and architecture
+- **docs/api-reference.md**: Complete Python API reference with examples
 - **examples/**: Sample WebNN graph JSON files and Python examples
-- **tests/test_python_api.py**: Python API test suite (45 tests)
+- **tests/test_python_api.py**: Python API test suite (91 tests: 79 passing, 12 skipped)
+- **TODO.txt**: Implementation roadmap and completed features
 - **Makefile**: Common build and validation targets
 - **pyproject.toml**: Python package configuration
 - **LICENSE**: Apache 2.0 license
