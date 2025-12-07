@@ -364,6 +364,108 @@ impl crate::converters::GraphConverter for CoremlConverter {
                     })),
                     ..Default::default()
                 }
+            } else if op.op_type.eq_ignore_ascii_case("convTranspose2d") {
+                // Get filter operand (second input)
+                let filter_id =
+                    *op.input_operands
+                        .get(1)
+                        .ok_or_else(|| GraphError::ConversionFailed {
+                            format: "coreml".to_string(),
+                            reason: "convTranspose2d requires filter input".to_string(),
+                        })?;
+
+                let filter_operand = graph
+                    .operand(filter_id)
+                    .ok_or_else(|| GraphError::InvalidConversionOperand { operand: filter_id })?;
+                let filter_shape = filter_operand.descriptor.shape.clone();
+
+                // Filter shape: [in_channels, out_channels/groups, height, width] (transpose conv layout)
+                if filter_shape.len() != 4 {
+                    return Err(GraphError::ConversionFailed {
+                        format: "coreml".to_string(),
+                        reason: format!(
+                            "convTranspose2d filter must be 4D, got shape {:?}",
+                            filter_shape
+                        ),
+                    });
+                }
+
+                let (in_channels, out_channels_per_group, kernel_h, kernel_w) = (
+                    filter_shape[0],
+                    filter_shape[1],
+                    filter_shape[2],
+                    filter_shape[3],
+                );
+
+                // Get filter weights from constant data
+                let filter_data = graph
+                    .constant_operand_ids_to_handles
+                    .get(&filter_id)
+                    .ok_or_else(|| GraphError::ConversionFailed {
+                        format: "coreml".to_string(),
+                        reason: "convTranspose2d filter must be constant".to_string(),
+                    })?;
+
+                let floats: &[f32] = bytemuck::try_cast_slice(&filter_data.data).map_err(|_| {
+                    GraphError::ConversionFailed {
+                        format: "coreml".to_string(),
+                        reason: "convTranspose2d filter must be float32".to_string(),
+                    }
+                })?;
+
+                // Parse attributes
+                let strides = op
+                    .attributes
+                    .get("strides")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| arr.iter().filter_map(|v| v.as_u64()).collect::<Vec<u64>>())
+                    .unwrap_or_else(|| vec![1, 1]);
+
+                let dilations = op
+                    .attributes
+                    .get("dilations")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| arr.iter().filter_map(|v| v.as_u64()).collect::<Vec<u64>>())
+                    .unwrap_or_else(|| vec![1, 1]);
+
+                let groups = op
+                    .attributes
+                    .get("groups")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(1);
+
+                let out_channels = out_channels_per_group * (groups as u32);
+
+                let weight = WeightParams {
+                    float_value: floats.to_vec(),
+                    raw_value: Bytes::new(),
+                    ..Default::default()
+                };
+
+                NeuralNetworkLayer {
+                    name: layer_name,
+                    input: vec![input_names.get(0).cloned().ok_or_else(|| {
+                        GraphError::ConversionFailed {
+                            format: "coreml".to_string(),
+                            reason: "convTranspose2d missing input".to_string(),
+                        }
+                    })?],
+                    output: output_names,
+                    layer: Some(Layer::Convolution(ConvolutionLayerParams {
+                        output_channels: out_channels as u64,
+                        kernel_channels: in_channels as u64,
+                        n_groups: groups,
+                        kernel_size: vec![kernel_h as u64, kernel_w as u64],
+                        stride: strides,
+                        dilation_factor: dilations,
+                        is_deconvolution: true, // Key difference: this is a transposed conv
+                        has_bias: false,
+                        weights: Some(weight),
+                        bias: None,
+                        ..Default::default()
+                    })),
+                    ..Default::default()
+                }
             } else {
                 return Err(GraphError::ConversionFailed {
                     format: "coreml".to_string(),

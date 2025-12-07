@@ -489,6 +489,82 @@ output = builder.conv2d(
 # Output shape: [1, 32, 32, 64] (also NHWC)
 ```
 
+#### `conv_transpose2d(input, filter, strides=None, dilations=None, pads=None, output_padding=None, output_sizes=None, groups=None, input_layout=None, filter_layout=None)`
+
+2D transposed convolution (deconvolution) operation for upsampling.
+
+**Parameters:**
+
+- `input` (MLOperand): Input tensor (4D)
+- `filter` (MLOperand): Filter weights (4D constant tensor)
+- `strides` (list[int], optional): Stride along each spatial axis. Default: `[1, 1]`
+- `dilations` (list[int], optional): Dilation along each spatial axis. Default: `[1, 1]`
+- `pads` (list[int], optional): Padding. Default: `[0, 0, 0, 0]`
+- `output_padding` (list[int], optional): Additional output padding. Default: `[0, 0]`
+- `output_sizes` (list[int], optional): Explicit output spatial dimensions. Default: `None` (computed)
+- `groups` (int, optional): Number of groups. Default: `1`
+- `input_layout` (str, optional): `"nchw"` or `"nhwc"`. Default: `"nchw"`
+- `filter_layout` (str, optional): Filter layout. Default: `"oihw"`
+
+**Returns:** MLOperand with upsampled output tensor
+
+**Shape Inference:**
+
+For NCHW input `[N, C_in, H_in, W_in]` and OIHW filter `[C_in, C_out/groups, K_h, K_w]`:
+
+```
+output_h = (H_in - 1) * stride_h + effective_kernel_h - pad_begin_h - pad_end_h + output_pad_h
+output_w = (W_in - 1) * stride_w + effective_kernel_w - pad_begin_w - pad_end_w + output_pad_w
+output_shape = [N, C_out, output_h, output_w]
+```
+
+**Example: Basic Upsampling**
+
+```python
+# Upsample 14x14 to 29x29 with stride=2
+input_op = builder.input("input", [1, 64, 14, 14], "float32")
+filter_weights = np.random.randn(64, 32, 3, 3).astype(np.float32)
+filter_op = builder.constant(filter_weights)
+
+output = builder.conv_transpose2d(input_op, filter_op, strides=[2, 2])
+# Output shape: [1, 32, 29, 29]
+```
+
+**Example: With Output Padding**
+
+```python
+# Use output_padding to control exact output size
+input_op = builder.input("input", [1, 64, 14, 14], "float32")
+filter_weights = np.random.randn(64, 32, 3, 3).astype(np.float32)
+filter_op = builder.constant(filter_weights)
+
+output = builder.conv_transpose2d(
+    input_op,
+    filter_op,
+    strides=[2, 2],
+    output_padding=[1, 1]
+)
+# Output shape: [1, 32, 30, 30]
+```
+
+**Example: Explicit Output Sizes**
+
+```python
+# Specify exact output dimensions
+input_op = builder.input("input", [1, 64, 14, 14], "float32")
+filter_weights = np.random.randn(64, 32, 3, 3).astype(np.float32)
+filter_op = builder.constant(filter_weights)
+
+output = builder.conv_transpose2d(
+    input_op,
+    filter_op,
+    strides=[2, 2],
+    pads=[1, 1, 1, 1],
+    output_sizes=[28, 28]
+)
+# Output shape: [1, 32, 28, 28]
+```
+
 ### Unary Operations
 
 All unary operations take one operand and return a new operand.

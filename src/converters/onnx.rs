@@ -31,9 +31,12 @@ impl OnnxConverter {
     }
 
     fn onnx_op_type(op_type: &str) -> String {
-        // Handle special case for matmul -> MatMul
+        // Handle special cases
         if op_type.eq_ignore_ascii_case("matmul") {
             return "MatMul".to_string();
+        }
+        if op_type.eq_ignore_ascii_case("convTranspose2d") {
+            return "ConvTranspose".to_string();
         }
 
         // Default: capitalize first letter
@@ -104,6 +107,98 @@ impl OnnxConverter {
 
         attributes
     }
+
+    /// Create ONNX attributes for convTranspose2d operation
+    fn create_conv_transpose2d_attributes(op: &Operation) -> Vec<AttributeProto> {
+        let mut attributes = Vec::new();
+
+        // Parse attributes from JSON
+        if let Some(strides) = op.attributes.get("strides").and_then(|v| v.as_array()) {
+            let strides_i64: Vec<i64> = strides
+                .iter()
+                .filter_map(|v| v.as_u64().map(|u| u as i64))
+                .collect();
+            if !strides_i64.is_empty() {
+                attributes.push(AttributeProto {
+                    name: Some("strides".to_string()),
+                    ints: strides_i64,
+                    ..Default::default()
+                });
+            }
+        }
+
+        if let Some(dilations) = op.attributes.get("dilations").and_then(|v| v.as_array()) {
+            let dilations_i64: Vec<i64> = dilations
+                .iter()
+                .filter_map(|v| v.as_u64().map(|u| u as i64))
+                .collect();
+            if !dilations_i64.is_empty() {
+                attributes.push(AttributeProto {
+                    name: Some("dilations".to_string()),
+                    ints: dilations_i64,
+                    ..Default::default()
+                });
+            }
+        }
+
+        if let Some(pads) = op.attributes.get("pads").and_then(|v| v.as_array()) {
+            let pads_i64: Vec<i64> = pads
+                .iter()
+                .filter_map(|v| v.as_u64().map(|u| u as i64))
+                .collect();
+            if !pads_i64.is_empty() {
+                attributes.push(AttributeProto {
+                    name: Some("pads".to_string()),
+                    ints: pads_i64,
+                    ..Default::default()
+                });
+            }
+        }
+
+        // output_padding attribute (specific to transposed convolution)
+        if let Some(output_padding) = op
+            .attributes
+            .get("outputPadding")
+            .and_then(|v| v.as_array())
+        {
+            let output_padding_i64: Vec<i64> = output_padding
+                .iter()
+                .filter_map(|v| v.as_u64().map(|u| u as i64))
+                .collect();
+            if !output_padding_i64.is_empty() {
+                attributes.push(AttributeProto {
+                    name: Some("output_padding".to_string()),
+                    ints: output_padding_i64,
+                    ..Default::default()
+                });
+            }
+        }
+
+        // output_shape attribute (optional, specific to transposed convolution)
+        if let Some(output_sizes) = op.attributes.get("outputSizes").and_then(|v| v.as_array()) {
+            let output_shape_i64: Vec<i64> = output_sizes
+                .iter()
+                .filter_map(|v| v.as_u64().map(|u| u as i64))
+                .collect();
+            if !output_shape_i64.is_empty() {
+                attributes.push(AttributeProto {
+                    name: Some("output_shape".to_string()),
+                    ints: output_shape_i64,
+                    ..Default::default()
+                });
+            }
+        }
+
+        if let Some(groups) = op.attributes.get("groups").and_then(|v| v.as_u64()) {
+            attributes.push(AttributeProto {
+                name: Some("group".to_string()), // Note: ONNX uses "group" not "groups"
+                i: Some(groups as i64),
+                ..Default::default()
+            });
+        }
+
+        attributes
+    }
 }
 
 impl crate::converters::GraphConverter for OnnxConverter {
@@ -157,6 +252,8 @@ impl crate::converters::GraphConverter for OnnxConverter {
                 // Create attributes based on operation type
                 let attributes = if op.op_type == "conv2d" {
                     Self::create_conv2d_attributes(op)
+                } else if op.op_type == "convTranspose2d" {
+                    Self::create_conv_transpose2d_attributes(op)
                 } else {
                     Vec::new()
                 };

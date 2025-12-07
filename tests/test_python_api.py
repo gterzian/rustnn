@@ -570,6 +570,108 @@ def test_conv2d_invalid_layout(builder):
         builder.conv2d(input_op, filter_op, input_layout="invalid")
 
 
+def test_conv_transpose2d_basic(builder):
+    """Test basic convTranspose2d operation"""
+    # Input: [1, 64, 14, 14], Filter: [64, 32, 3, 3]
+    # Output: (14-1)*1 + 3 - 0 - 0 + 0 = 16
+    input_op = builder.input("input", [1, 64, 14, 14], "float32")
+    filter_data = np.random.randn(64, 32, 3, 3).astype(np.float32)
+    filter_op = builder.constant(filter_data)
+
+    output = builder.conv_transpose2d(input_op, filter_op)
+
+    assert output.shape == [1, 32, 16, 16], f"Expected [1, 32, 16, 16], got {output.shape}"
+    assert output.data_type == "float32"
+
+
+def test_conv_transpose2d_with_stride(builder):
+    """Test convTranspose2d with stride=2 for upsampling"""
+    # Input: [1, 64, 14, 14], Filter: [64, 32, 3, 3]
+    # Output: (14-1)*2 + 3 - 0 - 0 + 0 = 29
+    input_op = builder.input("input", [1, 64, 14, 14], "float32")
+    filter_data = np.random.randn(64, 32, 3, 3).astype(np.float32)
+    filter_op = builder.constant(filter_data)
+
+    output = builder.conv_transpose2d(input_op, filter_op, strides=[2, 2])
+
+    assert output.shape == [1, 32, 29, 29], f"Expected [1, 32, 29, 29], got {output.shape}"
+
+
+def test_conv_transpose2d_with_padding(builder):
+    """Test convTranspose2d with padding"""
+    # Input: [1, 64, 14, 14], Filter: [64, 32, 3, 3]
+    # Output: (14-1)*2 + 3 - 1 - 1 + 0 = 27
+    input_op = builder.input("input", [1, 64, 14, 14], "float32")
+    filter_data = np.random.randn(64, 32, 3, 3).astype(np.float32)
+    filter_op = builder.constant(filter_data)
+
+    output = builder.conv_transpose2d(input_op, filter_op, strides=[2, 2], pads=[1, 1, 1, 1])
+
+    assert output.shape == [1, 32, 27, 27], f"Expected [1, 32, 27, 27], got {output.shape}"
+
+
+def test_conv_transpose2d_with_output_padding(builder):
+    """Test convTranspose2d with output_padding"""
+    # Input: [1, 64, 14, 14], Filter: [64, 32, 3, 3]
+    # Output: (14-1)*2 + 3 - 0 - 0 + 1 = 30
+    input_op = builder.input("input", [1, 64, 14, 14], "float32")
+    filter_data = np.random.randn(64, 32, 3, 3).astype(np.float32)
+    filter_op = builder.constant(filter_data)
+
+    output = builder.conv_transpose2d(input_op, filter_op, strides=[2, 2], output_padding=[1, 1])
+
+    assert output.shape == [1, 32, 30, 30], f"Expected [1, 32, 30, 30], got {output.shape}"
+
+
+def test_conv_transpose2d_with_output_sizes(builder):
+    """Test convTranspose2d with explicit output_sizes"""
+    input_op = builder.input("input", [1, 64, 14, 14], "float32")
+    filter_data = np.random.randn(64, 32, 3, 3).astype(np.float32)
+    filter_op = builder.constant(filter_data)
+
+    # Specify exact output size
+    output = builder.conv_transpose2d(
+        input_op, filter_op, strides=[2, 2], pads=[1, 1, 1, 1], output_sizes=[28, 28]
+    )
+
+    assert output.shape == [1, 32, 28, 28], f"Expected [1, 32, 28, 28], got {output.shape}"
+
+
+def test_conv_transpose2d_nhwc_layout(builder):
+    """Test convTranspose2d with NHWC (channels-last) layout"""
+    # Input: [1, 14, 14, 64] (NHWC format)
+    input_op = builder.input("input", [1, 14, 14, 64], "float32")
+    filter_data = np.random.randn(64, 32, 3, 3).astype(np.float32)
+    filter_op = builder.constant(filter_data)
+
+    output = builder.conv_transpose2d(
+        input_op, filter_op, strides=[2, 2], input_layout="nhwc"
+    )
+
+    # Output should also be NHWC: [1, 29, 29, 32]
+    assert output.shape == [1, 29, 29, 32], f"Expected [1, 29, 29, 32], got {output.shape}"
+
+
+def test_conv_transpose2d_invalid_input_shape(builder):
+    """Test that convTranspose2d rejects non-4D input"""
+    input_op = builder.input("input", [64, 14, 14], "float32")  # Only 3D
+    filter_data = np.random.randn(64, 32, 3, 3).astype(np.float32)
+    filter_op = builder.constant(filter_data)
+
+    with pytest.raises(ValueError, match="ConvTranspose2d input must be 4D"):
+        builder.conv_transpose2d(input_op, filter_op)
+
+
+def test_conv_transpose2d_invalid_layout(builder):
+    """Test that convTranspose2d validates layout parameters"""
+    input_op = builder.input("input", [1, 64, 14, 14], "float32")
+    filter_data = np.random.randn(64, 32, 3, 3).astype(np.float32)
+    filter_op = builder.constant(filter_data)
+
+    with pytest.raises(ValueError, match="Invalid input_layout"):
+        builder.conv_transpose2d(input_op, filter_op, input_layout="invalid")
+
+
 def test_reshape_valid(builder):
     """Test valid reshape operation"""
     x = builder.input("x", [2, 3], "float32")
@@ -804,17 +906,27 @@ def async_context(context):
 async def test_async_dispatch(async_context):
     """Test asynchronous graph dispatch"""
     builder = async_context.create_graph_builder()
-    
+
     # Build simple graph
     x = builder.input("x", [2, 3], "float32")
     y = builder.relu(x)
     graph = builder.build({"output": y})
-    
+
+    # Create tensors for dispatch
+    input_tensor = async_context.create_tensor([2, 3], "float32")
+    output_tensor = async_context.create_tensor([2, 3], "float32")
+
+    # Write input data
+    input_data = np.array([[1, -2, 3], [-4, 5, -6]], dtype=np.float32)
+    await async_context.write_tensor_async(input_tensor, input_data)
+
     # Dispatch asynchronously
-    inputs = {"x": np.array([[1, -2, 3], [-4, 5, -6]], dtype=np.float32)}
-    await async_context.dispatch(graph, inputs)
-    
+    await async_context.dispatch(graph, {"x": input_tensor}, {"output": output_tensor})
+
     # Dispatch should complete without error
+    # Optionally verify output
+    result = await async_context.read_tensor_async(output_tensor)
+    assert result.shape == (2, 3)
 
 
 @pytest.mark.asyncio
@@ -871,22 +983,38 @@ async def test_async_concurrent_operations(async_context):
 async def test_async_dispatch_with_actual_computation(async_context):
     """Test async dispatch with actual ONNX computation"""
     builder = async_context.create_graph_builder()
-    
+
     # Build graph: output = relu(x + y)
     x = builder.input("x", [2, 3], "float32")
     y = builder.input("y", [2, 3], "float32")
     z = builder.add(x, y)
     output = builder.relu(z)
     graph = builder.build({"output": output})
-    
-    # Dispatch asynchronously
+
+    # Create tensors for dispatch
+    x_tensor = async_context.create_tensor([2, 3], "float32")
+    y_tensor = async_context.create_tensor([2, 3], "float32")
+    output_tensor = async_context.create_tensor([2, 3], "float32")
+
+    # Write input data asynchronously
     x_data = np.array([[1, -2, 3], [-4, 5, -6]], dtype=np.float32)
     y_data = np.array([[0, 1, -1], [2, -3, 4]], dtype=np.float32)
-    
-    result = await async_context.dispatch(graph, {"x": x_data, "y": y_data})
-    
-    # Verify execution completed
-    assert result is None or isinstance(result, dict)
+    await async_context.write_tensor_async(x_tensor, x_data)
+    await async_context.write_tensor_async(y_tensor, y_data)
+
+    # Dispatch asynchronously
+    await async_context.dispatch(
+        graph,
+        {"x": x_tensor, "y": y_tensor},
+        {"output": output_tensor}
+    )
+
+    # Read results asynchronously
+    result = await async_context.read_tensor_async(output_tensor)
+
+    # Verify execution completed with correct results (relu(x + y))
+    expected = np.array([[1, 0, 2], [0, 2, 0]], dtype=np.float32)
+    np.testing.assert_array_almost_equal(result, expected)
 
 
 @pytest.mark.asyncio

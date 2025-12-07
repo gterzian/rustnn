@@ -23,7 +23,7 @@
 
 [x] Convolution operations
     - [x] conv2d (DONE: shape inference, Python API, ONNX/CoreML converters, 8 tests)
-    - [ ] conv2dTranspose
+    - [x] convTranspose2d (DONE: shape inference, Python API, ONNX/CoreML converters, 8 tests)
     - [x] depthwiseConv2d (DONE: use conv2d with groups=in_channels parameter)
 
 [ ] Pooling operations
