@@ -641,11 +641,18 @@ Contributions are welcome! Please see:
 
 1. Fork the repository
 2. Create a feature branch: `git checkout -b feature/my-feature`
-3. Make your changes
-4. Run tests: `cargo test && pytest tests/`
-5. Format code: `cargo fmt`
-6. Commit: `git commit -m "Add my feature"`
-7. Push and create a pull request
+3. **Install git hooks** (optional but recommended):
+   ```bash
+   ./scripts/install-git-hooks.sh
+   ```
+   This installs a pre-commit hook that automatically checks code formatting before each commit.
+4. Make your changes
+5. Run tests: `cargo test && pytest tests/`
+6. Format code: `cargo fmt` (or let the pre-commit hook handle it)
+7. Commit: `git commit -m "Add my feature"`
+8. Push and create a pull request
+
+**Note:** The pre-commit hook will prevent commits with unformatted code. If needed, you can bypass it with `git commit --no-verify`, but this is not recommended.
 
 ---
 
