@@ -80,6 +80,16 @@
 
 ## Development Conventions
 
+### Design Principles
+
+**Rust-First WebNN Implementation:**
+- The Rust code is a fully valid, standalone WebNN implementation
+- All core functionality, validation, and graph operations exist in pure Rust
+- The Rust library is independently usable without any Python dependency
+- Python bindings are a convenience layer to enable easy integration with Python projects
+- Python code should be minimal wrappers that expose Rust functionality
+- This ensures the library can be used in pure Rust projects, CLI tools, and Python projects alike
+
 ### Code Style
 
 1. **Naming:**
