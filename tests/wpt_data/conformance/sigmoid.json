@@ -1,0 +1,99 @@
+{
+  "operation": "sigmoid",
+  "wpt_version": "2025-12-07",
+  "wpt_commit": "manual_extraction",
+  "source_file": "webnn/conformance_tests/sigmoid.https.any.js",
+  "conversion_note": "Test cases manually extracted and adapted from WPT WebNN test suite",
+  "tests": [
+    {
+      "name": "sigmoid float32 1D tensor",
+      "inputs": {
+        "input": {
+          "data": [-2.0, -1.0, 0.0, 1.0, 2.0],
+          "shape": [5],
+          "dataType": "float32"
+        }
+      },
+      "operators": [
+        {
+          "name": "sigmoid",
+          "arguments": {
+            "input": "input"
+          },
+          "output": "output"
+        }
+      ],
+      "expectedOutputs": {
+        "output": {
+          "data": [0.11920292, 0.26894142, 0.5, 0.7310586, 0.8807971],
+          "shape": [5],
+          "dataType": "float32"
+        }
+      },
+      "tolerance": {
+        "type": "ULP",
+        "value": 34
+      }
+    },
+    {
+      "name": "sigmoid float32 2D tensor",
+      "inputs": {
+        "input": {
+          "data": [0.0, 1.0, 2.0, 3.0],
+          "shape": [2, 2],
+          "dataType": "float32"
+        }
+      },
+      "operators": [
+        {
+          "name": "sigmoid",
+          "arguments": {
+            "input": "input"
+          },
+          "output": "output"
+        }
+      ],
+      "expectedOutputs": {
+        "output": {
+          "data": [0.5, 0.7310586, 0.8807971, 0.95257413],
+          "shape": [2, 2],
+          "dataType": "float32"
+        }
+      },
+      "tolerance": {
+        "type": "ULP",
+        "value": 34
+      }
+    },
+    {
+      "name": "sigmoid float32 3D tensor",
+      "inputs": {
+        "input": {
+          "data": [-1.0, 0.0, 1.0, -2.0, 2.0, -3.0, 3.0, 0.5],
+          "shape": [2, 2, 2],
+          "dataType": "float32"
+        }
+      },
+      "operators": [
+        {
+          "name": "sigmoid",
+          "arguments": {
+            "input": "input"
+          },
+          "output": "output"
+        }
+      ],
+      "expectedOutputs": {
+        "output": {
+          "data": [0.26894142, 0.5, 0.7310586, 0.11920292, 0.8807971, 0.04742587, 0.95257413, 0.62245935],
+          "shape": [2, 2, 2],
+          "dataType": "float32"
+        }
+      },
+      "tolerance": {
+        "type": "ULP",
+        "value": 34
+      }
+    }
+  ]
+}

@@ -1,0 +1,102 @@
+{
+  "operation": "reshape",
+  "wpt_version": "2025-12-07",
+  "wpt_commit": "manual_extraction",
+  "source_file": "webnn/conformance_tests/reshape.https.any.js",
+  "conversion_note": "Test cases manually extracted and adapted from WPT WebNN test suite",
+  "tests": [
+    {
+      "name": "reshape float32 1D to 2D",
+      "inputs": {
+        "input": {
+          "data": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+          "shape": [6],
+          "dataType": "float32"
+        }
+      },
+      "operators": [
+        {
+          "name": "reshape",
+          "arguments": {
+            "input": "input",
+            "newShape": [2, 3]
+          },
+          "output": "output"
+        }
+      ],
+      "expectedOutputs": {
+        "output": {
+          "data": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+          "shape": [2, 3],
+          "dataType": "float32"
+        }
+      },
+      "tolerance": {
+        "type": "ULP",
+        "value": 0
+      }
+    },
+    {
+      "name": "reshape float32 2D to 3D",
+      "inputs": {
+        "input": {
+          "data": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0],
+          "shape": [2, 4],
+          "dataType": "float32"
+        }
+      },
+      "operators": [
+        {
+          "name": "reshape",
+          "arguments": {
+            "input": "input",
+            "newShape": [2, 2, 2]
+          },
+          "output": "output"
+        }
+      ],
+      "expectedOutputs": {
+        "output": {
+          "data": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0],
+          "shape": [2, 2, 2],
+          "dataType": "float32"
+        }
+      },
+      "tolerance": {
+        "type": "ULP",
+        "value": 0
+      }
+    },
+    {
+      "name": "reshape float32 3D to 1D",
+      "inputs": {
+        "input": {
+          "data": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+          "shape": [1, 2, 3],
+          "dataType": "float32"
+        }
+      },
+      "operators": [
+        {
+          "name": "reshape",
+          "arguments": {
+            "input": "input",
+            "newShape": [6]
+          },
+          "output": "output"
+        }
+      ],
+      "expectedOutputs": {
+        "output": {
+          "data": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+          "shape": [6],
+          "dataType": "float32"
+        }
+      },
+      "tolerance": {
+        "type": "ULP",
+        "value": 0
+      }
+    }
+  ]
+}

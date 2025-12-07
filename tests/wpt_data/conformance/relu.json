@@ -1,0 +1,129 @@
+{
+  "operation": "relu",
+  "wpt_version": "2025-12-07",
+  "wpt_commit": "manual_extraction",
+  "source_file": "webnn/conformance_tests/relu.https.any.js",
+  "conversion_note": "Test cases manually extracted and adapted from WPT WebNN test suite",
+  "tests": [
+    {
+      "name": "relu float32 1D tensor",
+      "inputs": {
+        "input": {
+          "data": [-1.0, 0.0, 1.0, -5.5, 3.14],
+          "shape": [5],
+          "dataType": "float32"
+        }
+      },
+      "operators": [
+        {
+          "name": "relu",
+          "arguments": {
+            "input": "input"
+          },
+          "output": "output"
+        }
+      ],
+      "expectedOutputs": {
+        "output": {
+          "data": [0.0, 0.0, 1.0, 0.0, 3.14],
+          "shape": [5],
+          "dataType": "float32"
+        }
+      },
+      "tolerance": {
+        "type": "ULP",
+        "value": 0
+      }
+    },
+    {
+      "name": "relu float32 2D tensor",
+      "inputs": {
+        "input": {
+          "data": [-1.0, -2.0, -3.0, 1.0, 2.0, 3.0],
+          "shape": [2, 3],
+          "dataType": "float32"
+        }
+      },
+      "operators": [
+        {
+          "name": "relu",
+          "arguments": {
+            "input": "input"
+          },
+          "output": "output"
+        }
+      ],
+      "expectedOutputs": {
+        "output": {
+          "data": [0.0, 0.0, 0.0, 1.0, 2.0, 3.0],
+          "shape": [2, 3],
+          "dataType": "float32"
+        }
+      },
+      "tolerance": {
+        "type": "ULP",
+        "value": 0
+      }
+    },
+    {
+      "name": "relu float32 3D tensor",
+      "inputs": {
+        "input": {
+          "data": [-1.0, 0.0, 1.0, -2.0, 3.0, -4.0, 5.0, -6.0],
+          "shape": [2, 2, 2],
+          "dataType": "float32"
+        }
+      },
+      "operators": [
+        {
+          "name": "relu",
+          "arguments": {
+            "input": "input"
+          },
+          "output": "output"
+        }
+      ],
+      "expectedOutputs": {
+        "output": {
+          "data": [0.0, 0.0, 1.0, 0.0, 3.0, 0.0, 5.0, 0.0],
+          "shape": [2, 2, 2],
+          "dataType": "float32"
+        }
+      },
+      "tolerance": {
+        "type": "ULP",
+        "value": 0
+      }
+    },
+    {
+      "name": "relu float32 4D tensor",
+      "inputs": {
+        "input": {
+          "data": [-1.0, -2.0, 3.0, 4.0, -5.0, 6.0, -7.0, 8.0, 9.0, -10.0, 11.0, -12.0],
+          "shape": [2, 2, 3, 1],
+          "dataType": "float32"
+        }
+      },
+      "operators": [
+        {
+          "name": "relu",
+          "arguments": {
+            "input": "input"
+          },
+          "output": "output"
+        }
+      ],
+      "expectedOutputs": {
+        "output": {
+          "data": [0.0, 0.0, 3.0, 4.0, 0.0, 6.0, 0.0, 8.0, 9.0, 0.0, 11.0, 0.0],
+          "shape": [2, 2, 3, 1],
+          "dataType": "float32"
+        }
+      },
+      "tolerance": {
+        "type": "ULP",
+        "value": 0
+      }
+    }
+  ]
+}

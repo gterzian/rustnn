@@ -1,0 +1,41 @@
+{
+  "operation": "reduce_max",
+  "wpt_version": "2025-12-07",
+  "wpt_commit": "manual_extraction",
+  "source_file": "webnn/conformance_tests/reduce.https.any.js",
+  "conversion_note": "Test cases manually extracted and adapted from WPT WebNN test suite",
+  "tests": [
+    {
+      "name": "reduce_max float32 2D tensor axis 1",
+      "inputs": {
+        "input": {
+          "data": [1.0, 2.0, 3.0, 6.0, 5.0, 4.0],
+          "shape": [2, 3],
+          "dataType": "float32"
+        }
+      },
+      "operators": [
+        {
+          "name": "reduce_max",
+          "arguments": {
+            "input": "input",
+            "axes": [1],
+            "keepDimensions": false
+          },
+          "output": "output"
+        }
+      ],
+      "expectedOutputs": {
+        "output": {
+          "data": [3.0, 6.0],
+          "shape": [2],
+          "dataType": "float32"
+        }
+      },
+      "tolerance": {
+        "type": "ULP",
+        "value": 0
+      }
+    }
+  ]
+}

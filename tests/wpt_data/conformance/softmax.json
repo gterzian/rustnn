@@ -1,0 +1,99 @@
+{
+  "operation": "softmax",
+  "wpt_version": "2025-12-07",
+  "wpt_commit": "manual_extraction",
+  "source_file": "webnn/conformance_tests/softmax.https.any.js",
+  "conversion_note": "Test cases manually extracted and adapted from WPT WebNN test suite",
+  "tests": [
+    {
+      "name": "softmax float32 2D tensor",
+      "inputs": {
+        "input": {
+          "data": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+          "shape": [2, 3],
+          "dataType": "float32"
+        }
+      },
+      "operators": [
+        {
+          "name": "softmax",
+          "arguments": {
+            "input": "input"
+          },
+          "output": "output"
+        }
+      ],
+      "expectedOutputs": {
+        "output": {
+          "data": [0.09003057, 0.24472848, 0.66524094, 0.09003057, 0.24472848, 0.66524094],
+          "shape": [2, 3],
+          "dataType": "float32"
+        }
+      },
+      "tolerance": {
+        "type": "ULP",
+        "value": 100
+      }
+    },
+    {
+      "name": "softmax float32 3D tensor",
+      "inputs": {
+        "input": {
+          "data": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0],
+          "shape": [2, 2, 2],
+          "dataType": "float32"
+        }
+      },
+      "operators": [
+        {
+          "name": "softmax",
+          "arguments": {
+            "input": "input"
+          },
+          "output": "output"
+        }
+      ],
+      "expectedOutputs": {
+        "output": {
+          "data": [0.26894143, 0.7310586, 0.26894143, 0.7310586, 0.26894143, 0.7310586, 0.26894143, 0.7310586],
+          "shape": [2, 2, 2],
+          "dataType": "float32"
+        }
+      },
+      "tolerance": {
+        "type": "ULP",
+        "value": 100
+      }
+    },
+    {
+      "name": "softmax float32 4D tensor",
+      "inputs": {
+        "input": {
+          "data": [0.0, 1.0, 2.0, 3.0],
+          "shape": [1, 1, 2, 2],
+          "dataType": "float32"
+        }
+      },
+      "operators": [
+        {
+          "name": "softmax",
+          "arguments": {
+            "input": "input"
+          },
+          "output": "output"
+        }
+      ],
+      "expectedOutputs": {
+        "output": {
+          "data": [0.2689414, 0.7310586, 0.2689414, 0.7310586],
+          "shape": [1, 1, 2, 2],
+          "dataType": "float32"
+        }
+      },
+      "tolerance": {
+        "type": "ULP",
+        "value": 100
+      }
+    }
+  ]
+}

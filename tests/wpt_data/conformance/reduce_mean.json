@@ -1,0 +1,73 @@
+{
+  "operation": "reduce_mean",
+  "wpt_version": "2025-12-07",
+  "wpt_commit": "manual_extraction",
+  "source_file": "webnn/conformance_tests/reduce.https.any.js",
+  "conversion_note": "Test cases manually extracted and adapted from WPT WebNN test suite",
+  "tests": [
+    {
+      "name": "reduce_mean float32 2D tensor axis 1",
+      "inputs": {
+        "input": {
+          "data": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+          "shape": [2, 3],
+          "dataType": "float32"
+        }
+      },
+      "operators": [
+        {
+          "name": "reduce_mean",
+          "arguments": {
+            "input": "input",
+            "axes": [1],
+            "keepDimensions": false
+          },
+          "output": "output"
+        }
+      ],
+      "expectedOutputs": {
+        "output": {
+          "data": [2.0, 5.0],
+          "shape": [2],
+          "dataType": "float32"
+        }
+      },
+      "tolerance": {
+        "type": "ULP",
+        "value": 2
+      }
+    },
+    {
+      "name": "reduce_mean float32 3D tensor axis 0",
+      "inputs": {
+        "input": {
+          "data": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0],
+          "shape": [2, 2, 2],
+          "dataType": "float32"
+        }
+      },
+      "operators": [
+        {
+          "name": "reduce_mean",
+          "arguments": {
+            "input": "input",
+            "axes": [0],
+            "keepDimensions": false
+          },
+          "output": "output"
+        }
+      ],
+      "expectedOutputs": {
+        "output": {
+          "data": [4.0, 5.0, 6.0, 7.0],
+          "shape": [2, 2],
+          "dataType": "float32"
+        }
+      },
+      "tolerance": {
+        "type": "ULP",
+        "value": 2
+      }
+    }
+  ]
+}

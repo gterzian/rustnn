@@ -1,0 +1,117 @@
+{
+  "operation": "matmul",
+  "wpt_version": "2025-12-07",
+  "wpt_commit": "manual_extraction",
+  "source_file": "webnn/conformance_tests/matmul.https.any.js",
+  "conversion_note": "Test cases manually extracted and adapted from WPT WebNN test suite",
+  "tests": [
+    {
+      "name": "matmul float32 2D x 2D",
+      "inputs": {
+        "a": {
+          "data": [1.0, 2.0, 3.0, 4.0],
+          "shape": [2, 2],
+          "dataType": "float32"
+        },
+        "b": {
+          "data": [5.0, 6.0, 7.0, 8.0],
+          "shape": [2, 2],
+          "dataType": "float32"
+        }
+      },
+      "operators": [
+        {
+          "name": "matmul",
+          "arguments": {
+            "a": "a",
+            "b": "b"
+          },
+          "output": "output"
+        }
+      ],
+      "expectedOutputs": {
+        "output": {
+          "data": [19.0, 22.0, 43.0, 50.0],
+          "shape": [2, 2],
+          "dataType": "float32"
+        }
+      },
+      "tolerance": {
+        "type": "ULP",
+        "value": 100
+      }
+    },
+    {
+      "name": "matmul float32 3D x 3D batched",
+      "inputs": {
+        "a": {
+          "data": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0],
+          "shape": [2, 2, 2],
+          "dataType": "float32"
+        },
+        "b": {
+          "data": [1.0, 0.0, 0.0, 1.0, 2.0, 0.0, 0.0, 2.0],
+          "shape": [2, 2, 2],
+          "dataType": "float32"
+        }
+      },
+      "operators": [
+        {
+          "name": "matmul",
+          "arguments": {
+            "a": "a",
+            "b": "b"
+          },
+          "output": "output"
+        }
+      ],
+      "expectedOutputs": {
+        "output": {
+          "data": [1.0, 2.0, 3.0, 4.0, 10.0, 12.0, 14.0, 16.0],
+          "shape": [2, 2, 2],
+          "dataType": "float32"
+        }
+      },
+      "tolerance": {
+        "type": "ULP",
+        "value": 100
+      }
+    },
+    {
+      "name": "matmul float32 2D x 1D",
+      "inputs": {
+        "a": {
+          "data": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+          "shape": [2, 3],
+          "dataType": "float32"
+        },
+        "b": {
+          "data": [1.0, 2.0, 3.0],
+          "shape": [3],
+          "dataType": "float32"
+        }
+      },
+      "operators": [
+        {
+          "name": "matmul",
+          "arguments": {
+            "a": "a",
+            "b": "b"
+          },
+          "output": "output"
+        }
+      ],
+      "expectedOutputs": {
+        "output": {
+          "data": [14.0, 32.0],
+          "shape": [2],
+          "dataType": "float32"
+        }
+      },
+      "tolerance": {
+        "type": "ULP",
+        "value": 100
+      }
+    }
+  ]
+}

@@ -1,0 +1,117 @@
+{
+  "operation": "add",
+  "wpt_version": "2025-12-07",
+  "wpt_commit": "manual_extraction",
+  "source_file": "webnn/conformance_tests/add.https.any.js",
+  "conversion_note": "Test cases manually extracted and adapted from WPT WebNN test suite",
+  "tests": [
+    {
+      "name": "add float32 1D tensors",
+      "inputs": {
+        "a": {
+          "data": [1.0, 2.0, 3.0, 4.0],
+          "shape": [4],
+          "dataType": "float32"
+        },
+        "b": {
+          "data": [5.0, 6.0, 7.0, 8.0],
+          "shape": [4],
+          "dataType": "float32"
+        }
+      },
+      "operators": [
+        {
+          "name": "add",
+          "arguments": {
+            "a": "a",
+            "b": "b"
+          },
+          "output": "output"
+        }
+      ],
+      "expectedOutputs": {
+        "output": {
+          "data": [6.0, 8.0, 10.0, 12.0],
+          "shape": [4],
+          "dataType": "float32"
+        }
+      },
+      "tolerance": {
+        "type": "ULP",
+        "value": 0
+      }
+    },
+    {
+      "name": "add float32 2D tensors",
+      "inputs": {
+        "a": {
+          "data": [1.0, 2.0, 3.0, 4.0],
+          "shape": [2, 2],
+          "dataType": "float32"
+        },
+        "b": {
+          "data": [5.0, 6.0, 7.0, 8.0],
+          "shape": [2, 2],
+          "dataType": "float32"
+        }
+      },
+      "operators": [
+        {
+          "name": "add",
+          "arguments": {
+            "a": "a",
+            "b": "b"
+          },
+          "output": "output"
+        }
+      ],
+      "expectedOutputs": {
+        "output": {
+          "data": [6.0, 8.0, 10.0, 12.0],
+          "shape": [2, 2],
+          "dataType": "float32"
+        }
+      },
+      "tolerance": {
+        "type": "ULP",
+        "value": 0
+      }
+    },
+    {
+      "name": "add float32 with broadcasting",
+      "inputs": {
+        "a": {
+          "data": [1.0, 2.0, 3.0, 4.0],
+          "shape": [2, 2],
+          "dataType": "float32"
+        },
+        "b": {
+          "data": [10.0],
+          "shape": [1],
+          "dataType": "float32"
+        }
+      },
+      "operators": [
+        {
+          "name": "add",
+          "arguments": {
+            "a": "a",
+            "b": "b"
+          },
+          "output": "output"
+        }
+      ],
+      "expectedOutputs": {
+        "output": {
+          "data": [11.0, 12.0, 13.0, 14.0],
+          "shape": [2, 2],
+          "dataType": "float32"
+        }
+      },
+      "tolerance": {
+        "type": "ULP",
+        "value": 0
+      }
+    }
+  ]
+}
