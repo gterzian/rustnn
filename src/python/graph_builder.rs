@@ -192,6 +192,124 @@ impl PyMLGraphBuilder {
         Ok(py_operand)
     }
 
+    /// 2D Convolution operation
+    ///
+    /// Args:
+    ///     input: Input operand (4D tensor)
+    ///     filter: Filter operand (4D tensor)
+    ///     strides: Stride along each spatial axis (default: [1, 1])
+    ///     dilations: Dilation along each spatial axis (default: [1, 1])
+    ///     pads: Padding [begin_h, begin_w, end_h, end_w] (default: [0, 0, 0, 0])
+    ///     groups: Number of groups (default: 1)
+    ///     input_layout: Input layout "nchw" or "nhwc" (default: "nchw")
+    ///     filter_layout: Filter layout "oihw", "hwio", "ohwi", or "ihwo" (default: "oihw")
+    ///
+    /// Returns:
+    ///     MLOperand: The output operand
+    #[pyo3(signature = (input, filter, strides=None, dilations=None, pads=None, groups=None, input_layout=None, filter_layout=None))]
+    fn conv2d(
+        &mut self,
+        input: &PyMLOperand,
+        filter: &PyMLOperand,
+        strides: Option<Vec<u32>>,
+        dilations: Option<Vec<u32>>,
+        pads: Option<Vec<u32>>,
+        groups: Option<u32>,
+        input_layout: Option<&str>,
+        filter_layout: Option<&str>,
+    ) -> PyResult<PyMLOperand> {
+        use crate::shape_inference::{
+            Conv2dFilterLayout, Conv2dInputLayout, Conv2dOptions, infer_conv2d_shape,
+        };
+
+        // Default values matching WebNN spec
+        let strides = strides.unwrap_or_else(|| vec![1, 1]);
+        let dilations = dilations.unwrap_or_else(|| vec![1, 1]);
+        let pads = pads.unwrap_or_else(|| vec![0, 0, 0, 0]);
+        let groups = groups.unwrap_or(1);
+
+        // Parse layout strings
+        let input_layout_enum = match input_layout.unwrap_or("nchw") {
+            "nchw" => Conv2dInputLayout::Nchw,
+            "nhwc" => Conv2dInputLayout::Nhwc,
+            other => {
+                return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                    "Invalid input_layout '{}', must be 'nchw' or 'nhwc'",
+                    other
+                )));
+            }
+        };
+
+        let filter_layout_enum = match filter_layout.unwrap_or("oihw") {
+            "oihw" => Conv2dFilterLayout::Oihw,
+            "hwio" => Conv2dFilterLayout::Hwio,
+            "ohwi" => Conv2dFilterLayout::Ohwi,
+            "ihwo" => Conv2dFilterLayout::Ihwo,
+            other => {
+                return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                    "Invalid filter_layout '{}', must be 'oihw', 'hwio', 'ohwi', or 'ihwo'",
+                    other
+                )));
+            }
+        };
+
+        // Create options for shape inference
+        let options = Conv2dOptions {
+            strides: strides.clone(),
+            dilations: dilations.clone(),
+            pads: pads.clone(),
+            groups,
+            input_layout: input_layout_enum,
+            filter_layout: filter_layout_enum,
+        };
+
+        // Infer output shape
+        let output_shape =
+            infer_conv2d_shape(&input.descriptor.shape, &filter.descriptor.shape, &options)
+                .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+
+        let output_descriptor = OperandDescriptor {
+            data_type: input.descriptor.data_type,
+            shape: output_shape,
+            pending_permutation: Vec::new(),
+        };
+
+        let output_id = self.next_operand_id;
+        self.next_operand_id += 1;
+
+        // Store parameters as JSON attributes
+        let attributes = serde_json::json!({
+            "strides": strides,
+            "dilations": dilations,
+            "pads": pads,
+            "groups": groups,
+            "inputLayout": input_layout.unwrap_or("nchw"),
+            "filterLayout": filter_layout.unwrap_or("oihw"),
+        });
+
+        let operation = Operation {
+            op_type: "conv2d".to_string(),
+            input_operands: vec![input.id, filter.id],
+            output_operand: output_id,
+            attributes,
+            label: None,
+        };
+
+        self.operations.push(operation);
+
+        let output_operand = Operand {
+            descriptor: output_descriptor.clone(),
+            kind: OperandKind::Output,
+            name: None,
+        };
+        self.operands.push(output_operand);
+
+        let py_operand = PyMLOperand::new(output_id, output_descriptor, OperandKind::Output, None);
+        self.operand_map.insert(output_id, py_operand.clone());
+
+        Ok(py_operand)
+    }
+
     // Unary operations
 
     /// ReLU activation

@@ -476,6 +476,100 @@ def test_matmul_incompatible(builder):
         builder.matmul(a, b)
 
 
+def test_conv2d_basic_nchw(builder):
+    """Test basic conv2d operation with NCHW layout"""
+    # Input: [1, 3, 32, 32], Filter: [64, 3, 3, 3]
+    input_op = builder.input("input", [1, 3, 32, 32], "float32")
+    filter_data = np.random.randn(64, 3, 3, 3).astype(np.float32)
+    filter_op = builder.constant(filter_data)
+
+    # Conv2d with padding to maintain spatial dimensions
+    output = builder.conv2d(input_op, filter_op, pads=[1, 1, 1, 1])
+
+    assert output.shape == [1, 64, 32, 32], f"Expected [1, 64, 32, 32], got {output.shape}"
+    assert output.data_type == "float32"
+
+
+def test_conv2d_with_stride(builder):
+    """Test conv2d with stride=2"""
+    input_op = builder.input("input", [1, 3, 28, 28], "float32")
+    filter_data = np.random.randn(32, 3, 5, 5).astype(np.float32)
+    filter_op = builder.constant(filter_data)
+
+    output = builder.conv2d(input_op, filter_op, strides=[2, 2])
+
+    assert output.shape == [1, 32, 12, 12], f"Expected [1, 32, 12, 12], got {output.shape}"
+
+
+def test_conv2d_nhwc_layout(builder):
+    """Test conv2d with NHWC (channels-last) layout"""
+    # Input: [1, 32, 32, 3] (NHWC format)
+    input_op = builder.input("input", [1, 32, 32, 3], "float32")
+    filter_data = np.random.randn(64, 3, 3, 3).astype(np.float32)
+    filter_op = builder.constant(filter_data)
+
+    output = builder.conv2d(input_op, filter_op, pads=[1, 1, 1, 1], input_layout="nhwc")
+
+    # Output should also be NHWC: [1, 32, 32, 64]
+    assert output.shape == [1, 32, 32, 64], f"Expected [1, 32, 32, 64], got {output.shape}"
+
+
+def test_conv2d_depthwise(builder):
+    """Test depthwise convolution (groups = input channels)"""
+    input_op = builder.input("input", [1, 32, 28, 28], "float32")
+    # Depthwise filter: [32, 1, 3, 3] - one filter per input channel
+    filter_data = np.random.randn(32, 1, 3, 3).astype(np.float32)
+    filter_op = builder.constant(filter_data)
+
+    output = builder.conv2d(input_op, filter_op, pads=[1, 1, 1, 1], groups=32)
+
+    # Output should maintain channel count for depthwise conv
+    assert output.shape == [1, 32, 28, 28], f"Expected [1, 32, 28, 28], got {output.shape}"
+
+
+def test_conv2d_with_dilation(builder):
+    """Test conv2d with dilated convolution"""
+    input_op = builder.input("input", [1, 3, 32, 32], "float32")
+    filter_data = np.random.randn(64, 3, 3, 3).astype(np.float32)
+    filter_op = builder.constant(filter_data)
+
+    # Dilation=2 increases effective kernel size to 5x5
+    output = builder.conv2d(input_op, filter_op, dilations=[2, 2], pads=[2, 2, 2, 2])
+
+    assert output.shape == [1, 64, 32, 32], f"Expected [1, 64, 32, 32], got {output.shape}"
+
+
+def test_conv2d_invalid_input_shape(builder):
+    """Test that conv2d rejects non-4D input"""
+    input_op = builder.input("input", [3, 32, 32], "float32")  # Only 3D
+    filter_data = np.random.randn(64, 3, 3, 3).astype(np.float32)
+    filter_op = builder.constant(filter_data)
+
+    with pytest.raises(ValueError, match="Conv2d input must be 4D"):
+        builder.conv2d(input_op, filter_op)
+
+
+def test_conv2d_invalid_groups(builder):
+    """Test that conv2d validates groups parameter"""
+    input_op = builder.input("input", [1, 3, 32, 32], "float32")
+    # Filter with wrong channel count for groups=2
+    filter_data = np.random.randn(64, 1, 3, 3).astype(np.float32)
+    filter_op = builder.constant(filter_data)
+
+    with pytest.raises(ValueError, match="Conv2d input channels.*must be divisible by groups"):
+        builder.conv2d(input_op, filter_op, groups=2)
+
+
+def test_conv2d_invalid_layout(builder):
+    """Test that conv2d validates layout parameters"""
+    input_op = builder.input("input", [1, 3, 32, 32], "float32")
+    filter_data = np.random.randn(64, 3, 3, 3).astype(np.float32)
+    filter_op = builder.constant(filter_data)
+
+    with pytest.raises(ValueError, match="Invalid input_layout"):
+        builder.conv2d(input_op, filter_op, input_layout="invalid")
+
+
 def test_reshape_valid(builder):
     """Test valid reshape operation"""
     x = builder.input("x", [2, 3], "float32")

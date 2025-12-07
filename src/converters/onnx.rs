@@ -1,9 +1,9 @@
 use crate::converters::ConvertedGraph;
 use crate::error::GraphError;
-use crate::graph::{DataType, GraphInfo};
+use crate::graph::{DataType, GraphInfo, Operation};
 use crate::protos::onnx::{
-    GraphProto, ModelProto, NodeProto, OperatorSetIdProto, TensorProto, TensorShapeProto,
-    TypeProto, ValueInfoProto, tensor_proto::DataType as ProtoDataType,
+    AttributeProto, GraphProto, ModelProto, NodeProto, OperatorSetIdProto, TensorProto,
+    TensorShapeProto, TypeProto, ValueInfoProto, tensor_proto::DataType as ProtoDataType,
     type_proto::Tensor as TensorTypeProto,
 };
 use prost::Message;
@@ -45,6 +45,64 @@ impl OnnxConverter {
         } else {
             String::new()
         }
+    }
+
+    /// Create ONNX attributes for conv2d operation
+    fn create_conv2d_attributes(op: &Operation) -> Vec<AttributeProto> {
+        let mut attributes = Vec::new();
+
+        // Parse attributes from JSON
+        if let Some(strides) = op.attributes.get("strides").and_then(|v| v.as_array()) {
+            let strides_i64: Vec<i64> = strides
+                .iter()
+                .filter_map(|v| v.as_u64().map(|u| u as i64))
+                .collect();
+            if !strides_i64.is_empty() {
+                attributes.push(AttributeProto {
+                    name: Some("strides".to_string()),
+                    ints: strides_i64,
+                    ..Default::default()
+                });
+            }
+        }
+
+        if let Some(dilations) = op.attributes.get("dilations").and_then(|v| v.as_array()) {
+            let dilations_i64: Vec<i64> = dilations
+                .iter()
+                .filter_map(|v| v.as_u64().map(|u| u as i64))
+                .collect();
+            if !dilations_i64.is_empty() {
+                attributes.push(AttributeProto {
+                    name: Some("dilations".to_string()),
+                    ints: dilations_i64,
+                    ..Default::default()
+                });
+            }
+        }
+
+        if let Some(pads) = op.attributes.get("pads").and_then(|v| v.as_array()) {
+            let pads_i64: Vec<i64> = pads
+                .iter()
+                .filter_map(|v| v.as_u64().map(|u| u as i64))
+                .collect();
+            if !pads_i64.is_empty() {
+                attributes.push(AttributeProto {
+                    name: Some("pads".to_string()),
+                    ints: pads_i64,
+                    ..Default::default()
+                });
+            }
+        }
+
+        if let Some(groups) = op.attributes.get("groups").and_then(|v| v.as_u64()) {
+            attributes.push(AttributeProto {
+                name: Some("group".to_string()), // Note: ONNX uses "group" not "groups"
+                i: Some(groups as i64),
+                ..Default::default()
+            });
+        }
+
+        attributes
     }
 }
 
@@ -95,21 +153,30 @@ impl crate::converters::GraphConverter for OnnxConverter {
             .operations
             .iter()
             .enumerate()
-            .map(|(idx, op)| NodeProto {
-                input: op
-                    .input_operands
-                    .iter()
-                    .map(|id| Self::operand_name(graph, *id))
-                    .collect(),
-                output: vec![Self::operand_name(graph, op.output_operand)],
-                name: Some(
-                    op.label
-                        .clone()
-                        .unwrap_or_else(|| format!("{}_{}", op.op_type, idx)),
-                ),
-                op_type: Some(Self::onnx_op_type(&op.op_type)),
-                attribute: Vec::new(),
-                ..Default::default()
+            .map(|(idx, op)| {
+                // Create attributes based on operation type
+                let attributes = if op.op_type == "conv2d" {
+                    Self::create_conv2d_attributes(op)
+                } else {
+                    Vec::new()
+                };
+
+                NodeProto {
+                    input: op
+                        .input_operands
+                        .iter()
+                        .map(|id| Self::operand_name(graph, *id))
+                        .collect(),
+                    output: vec![Self::operand_name(graph, op.output_operand)],
+                    name: Some(
+                        op.label
+                            .clone()
+                            .unwrap_or_else(|| format!("{}_{}", op.op_type, idx)),
+                    ),
+                    op_type: Some(Self::onnx_op_type(&op.op_type)),
+                    attribute: attributes,
+                    ..Default::default()
+                }
             })
             .collect();
 

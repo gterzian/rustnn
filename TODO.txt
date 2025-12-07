@@ -21,10 +21,10 @@
 
 ### Operations - Missing Implementations
 
-[ ] Convolution operations
-    - conv2d
-    - convTranspose2d
-    - depthwiseConv2d
+[x] Convolution operations
+    - [x] conv2d (DONE: shape inference, Python API, ONNX/CoreML converters, 8 tests)
+    - [ ] conv2dTranspose
+    - [x] depthwiseConv2d (DONE: use conv2d with groups=in_channels parameter)
 
 [ ] Pooling operations
     - averagePool2d

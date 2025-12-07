@@ -102,6 +102,206 @@ pub fn validate_reshape(input_shape: &[u32], output_shape: &[u32]) -> Result<(),
     Ok(())
 }
 
+/// Layout for conv2d input tensors
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Conv2dInputLayout {
+    /// Channels-first: [batch, channels, height, width]
+    Nchw,
+    /// Channels-last: [batch, height, width, channels]
+    Nhwc,
+}
+
+/// Layout for conv2d filter tensors
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Conv2dFilterLayout {
+    /// [out_channels, in_channels, height, width]
+    Oihw,
+    /// [height, width, in_channels, out_channels]
+    Hwio,
+    /// [out_channels, height, width, in_channels]
+    Ohwi,
+    /// [in_channels, height, width, out_channels]
+    Ihwo,
+}
+
+/// Parameters for conv2d shape inference
+pub struct Conv2dOptions {
+    pub strides: Vec<u32>,
+    pub dilations: Vec<u32>,
+    pub pads: Vec<u32>,
+    pub groups: u32,
+    pub input_layout: Conv2dInputLayout,
+    pub filter_layout: Conv2dFilterLayout,
+}
+
+/// Infer output shape for 2D convolution
+///
+/// Following the W3C WebNN specification for conv2d:
+/// https://www.w3.org/TR/webnn/#api-mlgraphbuilder-conv2d
+pub fn infer_conv2d_shape(
+    input_shape: &[u32],
+    filter_shape: &[u32],
+    options: &Conv2dOptions,
+) -> Result<Vec<u32>, GraphError> {
+    // Input must be 4D: [batch, channels, height, width] or [batch, height, width, channels]
+    if input_shape.len() != 4 {
+        return Err(GraphError::ShapeInferenceFailed {
+            reason: format!("Conv2d input must be 4D, got shape {:?}", input_shape),
+        });
+    }
+
+    // Filter must be 4D
+    if filter_shape.len() != 4 {
+        return Err(GraphError::ShapeInferenceFailed {
+            reason: format!("Conv2d filter must be 4D, got shape {:?}", filter_shape),
+        });
+    }
+
+    // Extract dimensions based on layout
+    let (batch, in_channels, input_h, input_w) = match options.input_layout {
+        Conv2dInputLayout::Nchw => (
+            input_shape[0],
+            input_shape[1],
+            input_shape[2],
+            input_shape[3],
+        ),
+        Conv2dInputLayout::Nhwc => (
+            input_shape[0],
+            input_shape[3],
+            input_shape[1],
+            input_shape[2],
+        ),
+    };
+
+    let (out_channels, filter_in_channels, kernel_h, kernel_w) = match options.filter_layout {
+        Conv2dFilterLayout::Oihw => (
+            filter_shape[0],
+            filter_shape[1],
+            filter_shape[2],
+            filter_shape[3],
+        ),
+        Conv2dFilterLayout::Hwio => (
+            filter_shape[3],
+            filter_shape[2],
+            filter_shape[0],
+            filter_shape[1],
+        ),
+        Conv2dFilterLayout::Ohwi => (
+            filter_shape[0],
+            filter_shape[3],
+            filter_shape[1],
+            filter_shape[2],
+        ),
+        Conv2dFilterLayout::Ihwo => (
+            filter_shape[3],
+            filter_shape[0],
+            filter_shape[1],
+            filter_shape[2],
+        ),
+    };
+
+    // Validate groups
+    if options.groups == 0 {
+        return Err(GraphError::ShapeInferenceFailed {
+            reason: "Conv2d groups must be > 0".to_string(),
+        });
+    }
+
+    if in_channels % options.groups != 0 {
+        return Err(GraphError::ShapeInferenceFailed {
+            reason: format!(
+                "Conv2d input channels {} must be divisible by groups {}",
+                in_channels, options.groups
+            ),
+        });
+    }
+
+    if filter_in_channels * options.groups != in_channels {
+        return Err(GraphError::ShapeInferenceFailed {
+            reason: format!(
+                "Conv2d filter input channels {} * groups {} must equal input channels {}",
+                filter_in_channels, options.groups, in_channels
+            ),
+        });
+    }
+
+    // Validate strides
+    if options.strides.len() != 2 {
+        return Err(GraphError::ShapeInferenceFailed {
+            reason: format!(
+                "Conv2d strides must have 2 elements, got {:?}",
+                options.strides
+            ),
+        });
+    }
+    let stride_h = options.strides[0];
+    let stride_w = options.strides[1];
+
+    if stride_h == 0 || stride_w == 0 {
+        return Err(GraphError::ShapeInferenceFailed {
+            reason: "Conv2d strides must be > 0".to_string(),
+        });
+    }
+
+    // Validate dilations
+    if options.dilations.len() != 2 {
+        return Err(GraphError::ShapeInferenceFailed {
+            reason: format!(
+                "Conv2d dilations must have 2 elements, got {:?}",
+                options.dilations
+            ),
+        });
+    }
+    let dilation_h = options.dilations[0];
+    let dilation_w = options.dilations[1];
+
+    if dilation_h == 0 || dilation_w == 0 {
+        return Err(GraphError::ShapeInferenceFailed {
+            reason: "Conv2d dilations must be > 0".to_string(),
+        });
+    }
+
+    // Validate pads
+    if options.pads.len() != 4 {
+        return Err(GraphError::ShapeInferenceFailed {
+            reason: format!("Conv2d pads must have 4 elements, got {:?}", options.pads),
+        });
+    }
+    let pad_begin_h = options.pads[0];
+    let pad_begin_w = options.pads[1];
+    let pad_end_h = options.pads[2];
+    let pad_end_w = options.pads[3];
+
+    // Compute effective kernel size with dilation
+    let effective_kernel_h = dilation_h * (kernel_h - 1) + 1;
+    let effective_kernel_w = dilation_w * (kernel_w - 1) + 1;
+
+    // Compute output spatial dimensions
+    // Formula: floor((input_size + pad_begin + pad_end - effective_kernel_size) / stride) + 1
+    let padded_h = input_h + pad_begin_h + pad_end_h;
+    let padded_w = input_w + pad_begin_w + pad_end_w;
+
+    if padded_h < effective_kernel_h || padded_w < effective_kernel_w {
+        return Err(GraphError::ShapeInferenceFailed {
+            reason: format!(
+                "Conv2d: padded input size [{}, {}] is smaller than effective kernel size [{}, {}]",
+                padded_h, padded_w, effective_kernel_h, effective_kernel_w
+            ),
+        });
+    }
+
+    let output_h = (padded_h - effective_kernel_h) / stride_h + 1;
+    let output_w = (padded_w - effective_kernel_w) / stride_w + 1;
+
+    // Build output shape based on input layout
+    let output_shape = match options.input_layout {
+        Conv2dInputLayout::Nchw => vec![batch, out_channels, output_h, output_w],
+        Conv2dInputLayout::Nhwc => vec![batch, output_h, output_w, out_channels],
+    };
+
+    Ok(output_shape)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -170,5 +370,118 @@ mod tests {
     fn test_validate_reshape_invalid() {
         assert!(validate_reshape(&[2, 3], &[5]).is_err());
         assert!(validate_reshape(&[2, 3, 4], &[5, 5]).is_err());
+    }
+
+    #[test]
+    fn test_conv2d_nchw_basic() {
+        // Input: [1, 3, 32, 32], Filter: [64, 3, 3, 3]
+        // Stride: [1, 1], Dilation: [1, 1], Pads: [1, 1, 1, 1]
+        // Expected output: [1, 64, 32, 32]
+        let options = Conv2dOptions {
+            strides: vec![1, 1],
+            dilations: vec![1, 1],
+            pads: vec![1, 1, 1, 1],
+            groups: 1,
+            input_layout: Conv2dInputLayout::Nchw,
+            filter_layout: Conv2dFilterLayout::Oihw,
+        };
+        let output = infer_conv2d_shape(&[1, 3, 32, 32], &[64, 3, 3, 3], &options).unwrap();
+        assert_eq!(output, vec![1, 64, 32, 32]);
+    }
+
+    #[test]
+    fn test_conv2d_nhwc_basic() {
+        // Input: [1, 32, 32, 3], Filter: [64, 3, 3, 3]
+        // Stride: [1, 1], Dilation: [1, 1], Pads: [1, 1, 1, 1]
+        // Expected output: [1, 32, 32, 64]
+        let options = Conv2dOptions {
+            strides: vec![1, 1],
+            dilations: vec![1, 1],
+            pads: vec![1, 1, 1, 1],
+            groups: 1,
+            input_layout: Conv2dInputLayout::Nhwc,
+            filter_layout: Conv2dFilterLayout::Oihw,
+        };
+        let output = infer_conv2d_shape(&[1, 32, 32, 3], &[64, 3, 3, 3], &options).unwrap();
+        assert_eq!(output, vec![1, 32, 32, 64]);
+    }
+
+    #[test]
+    fn test_conv2d_with_stride() {
+        // Input: [1, 3, 28, 28], Filter: [32, 3, 5, 5]
+        // Stride: [2, 2], Dilation: [1, 1], Pads: [0, 0, 0, 0]
+        // Output: [1, 32, 12, 12]
+        let options = Conv2dOptions {
+            strides: vec![2, 2],
+            dilations: vec![1, 1],
+            pads: vec![0, 0, 0, 0],
+            groups: 1,
+            input_layout: Conv2dInputLayout::Nchw,
+            filter_layout: Conv2dFilterLayout::Oihw,
+        };
+        let output = infer_conv2d_shape(&[1, 3, 28, 28], &[32, 3, 5, 5], &options).unwrap();
+        assert_eq!(output, vec![1, 32, 12, 12]);
+    }
+
+    #[test]
+    fn test_conv2d_with_dilation() {
+        // Input: [1, 3, 32, 32], Filter: [64, 3, 3, 3]
+        // Stride: [1, 1], Dilation: [2, 2], Pads: [2, 2, 2, 2]
+        // Effective kernel: 5x5, Output: [1, 64, 32, 32]
+        let options = Conv2dOptions {
+            strides: vec![1, 1],
+            dilations: vec![2, 2],
+            pads: vec![2, 2, 2, 2],
+            groups: 1,
+            input_layout: Conv2dInputLayout::Nchw,
+            filter_layout: Conv2dFilterLayout::Oihw,
+        };
+        let output = infer_conv2d_shape(&[1, 3, 32, 32], &[64, 3, 3, 3], &options).unwrap();
+        assert_eq!(output, vec![1, 64, 32, 32]);
+    }
+
+    #[test]
+    fn test_conv2d_depthwise() {
+        // Depthwise convolution: groups = in_channels
+        // Input: [1, 32, 28, 28], Filter: [32, 1, 3, 3]
+        // Stride: [1, 1], Dilation: [1, 1], Pads: [1, 1, 1, 1], Groups: 32
+        let options = Conv2dOptions {
+            strides: vec![1, 1],
+            dilations: vec![1, 1],
+            pads: vec![1, 1, 1, 1],
+            groups: 32,
+            input_layout: Conv2dInputLayout::Nchw,
+            filter_layout: Conv2dFilterLayout::Oihw,
+        };
+        let output = infer_conv2d_shape(&[1, 32, 28, 28], &[32, 1, 3, 3], &options).unwrap();
+        assert_eq!(output, vec![1, 32, 28, 28]);
+    }
+
+    #[test]
+    fn test_conv2d_invalid_input_dim() {
+        let options = Conv2dOptions {
+            strides: vec![1, 1],
+            dilations: vec![1, 1],
+            pads: vec![0, 0, 0, 0],
+            groups: 1,
+            input_layout: Conv2dInputLayout::Nchw,
+            filter_layout: Conv2dFilterLayout::Oihw,
+        };
+        // Input must be 4D
+        assert!(infer_conv2d_shape(&[3, 32, 32], &[64, 3, 3, 3], &options).is_err());
+    }
+
+    #[test]
+    fn test_conv2d_invalid_groups() {
+        let options = Conv2dOptions {
+            strides: vec![1, 1],
+            dilations: vec![1, 1],
+            pads: vec![0, 0, 0, 0],
+            groups: 2,
+            input_layout: Conv2dInputLayout::Nchw,
+            filter_layout: Conv2dFilterLayout::Oihw,
+        };
+        // Groups must divide input channels evenly
+        assert!(infer_conv2d_shape(&[1, 3, 32, 32], &[64, 1, 3, 3], &options).is_err());
     }
 }

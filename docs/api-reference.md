@@ -386,6 +386,109 @@ sum_result = builder.add(x, y)
 product = builder.mul(x, y)
 ```
 
+### Convolution Operations
+
+#### `conv2d(input, filter, strides=None, dilations=None, pads=None, groups=None, input_layout=None, filter_layout=None)`
+
+2D convolution operation for neural networks.
+
+**Parameters:**
+
+- `input` (MLOperand): Input tensor (4D: batch, channels, height, width or batch, height, width, channels)
+- `filter` (MLOperand): Filter/kernel weights (4D constant tensor)
+- `strides` (list[int], optional): Stride along each spatial axis. Default: `[1, 1]`
+- `dilations` (list[int], optional): Dilation along each spatial axis. Default: `[1, 1]`
+- `pads` (list[int], optional): Padding `[begin_height, begin_width, end_height, end_width]`. Default: `[0, 0, 0, 0]`
+- `groups` (int, optional): Number of groups for grouped/depthwise convolution. Default: `1`
+- `input_layout` (str, optional): Input tensor layout, either `"nchw"` (channels-first) or `"nhwc"` (channels-last). Default: `"nchw"`
+- `filter_layout` (str, optional): Filter tensor layout: `"oihw"`, `"hwio"`, `"ohwi"`, or `"ihwo"`. Default: `"oihw"`
+
+**Returns:** MLOperand with output tensor
+
+**Shape Inference:**
+
+For NCHW input `[N, C_in, H_in, W_in]` and OIHW filter `[C_out, C_in/groups, K_h, K_w]`:
+
+```
+output_h = (H_in + pad_begin_h + pad_end_h - dilation_h * (K_h - 1) - 1) / stride_h + 1
+output_w = (W_in + pad_begin_w + pad_end_w - dilation_w * (K_w - 1) - 1) / stride_w + 1
+output_shape = [N, C_out, output_h, output_w]
+```
+
+**Example: Standard Convolution**
+
+```python
+# Input: [batch=1, channels=3, height=32, width=32] (RGB image)
+input_op = builder.input("input", [1, 3, 32, 32], "float32")
+
+# Filter: [out_channels=64, in_channels=3, height=3, width=3]
+filter_weights = np.random.randn(64, 3, 3, 3).astype(np.float32)
+filter_op = builder.constant(filter_weights)
+
+# Apply conv2d with stride=2 and padding=1
+output = builder.conv2d(
+    input_op,
+    filter_op,
+    strides=[2, 2],
+    pads=[1, 1, 1, 1]
+)
+# Output shape: [1, 64, 16, 16]
+```
+
+**Example: Depthwise Convolution**
+
+```python
+# Depthwise convolution: each input channel is convolved separately
+input_op = builder.input("input", [1, 32, 28, 28], "float32")
+
+# Filter: [out_channels=32, in_channels=1, height=3, width=3]
+# groups=32 means 32 separate 1-channel convolutions
+filter_weights = np.random.randn(32, 1, 3, 3).astype(np.float32)
+filter_op = builder.constant(filter_weights)
+
+output = builder.conv2d(
+    input_op,
+    filter_op,
+    pads=[1, 1, 1, 1],
+    groups=32  # Depthwise: groups = input channels
+)
+# Output shape: [1, 32, 28, 28]
+```
+
+**Example: Dilated Convolution**
+
+```python
+# Dilated (atrous) convolution increases receptive field
+input_op = builder.input("input", [1, 3, 32, 32], "float32")
+filter_weights = np.random.randn(64, 3, 3, 3).astype(np.float32)
+filter_op = builder.constant(filter_weights)
+
+output = builder.conv2d(
+    input_op,
+    filter_op,
+    dilations=[2, 2],  # Dilation factor of 2
+    pads=[2, 2, 2, 2]  # Larger padding for dilated kernels
+)
+# Effective kernel size: 3 + (3-1)*2 = 5x5
+```
+
+**Example: NHWC Layout (Channels-Last)**
+
+```python
+# Input in NHWC format: [batch, height, width, channels]
+input_op = builder.input("input", [1, 32, 32, 3], "float32")
+filter_weights = np.random.randn(64, 3, 3, 3).astype(np.float32)
+filter_op = builder.constant(filter_weights)
+
+output = builder.conv2d(
+    input_op,
+    filter_op,
+    input_layout="nhwc",  # Channels-last input
+    pads=[1, 1, 1, 1]
+)
+# Output shape: [1, 32, 32, 64] (also NHWC)
+```
+
 ### Unary Operations
 
 All unary operations take one operand and return a new operand.
