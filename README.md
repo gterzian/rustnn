@@ -193,6 +193,31 @@ let converted = registry.convert("onnx", &graph_info)?;
 
 // Save to file
 std::fs::write("model.onnx", &converted.data)?;
+
+// Execute with ONNX Runtime (requires "onnx-runtime" feature)
+#[cfg(feature = "onnx-runtime")]
+{
+    use rustnn::executors::onnx::run_onnx_zeroed;
+
+    // Execute model with zeroed inputs
+    run_onnx_zeroed(&converted.data)?;
+    println!("Model executed successfully with ONNX Runtime");
+}
+
+// Execute with CoreML (requires "coreml-runtime" feature, macOS only)
+#[cfg(all(target_os = "macos", feature = "coreml-runtime"))]
+{
+    use rustnn::executors::coreml::run_coreml_zeroed_cached;
+    use rustnn::converters::CoremlConverter;
+
+    // Convert to CoreML
+    registry.register(Box::new(CoremlConverter));
+    let coreml = registry.convert("coreml", &graph_info)?;
+
+    // Execute on GPU (0=CPU, 1=GPU, 2=Neural Engine)
+    run_coreml_zeroed_cached(&coreml.data, 1)?;
+    println!("Model executed successfully with CoreML");
+}
 ```
 
 ---
