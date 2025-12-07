@@ -78,6 +78,8 @@ nav:
   - Getting Started: getting-started.md
   - API Reference: api-reference.md
   - Examples: examples.md
+  - Architecture: architecture.md
+  - Development: development.md
   - Advanced Topics: advanced.md
 
 extra:
