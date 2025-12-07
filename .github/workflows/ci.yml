@@ -127,7 +127,7 @@ jobs:
         run: pip install maturin
 
       - name: Build wheel
-        run: maturin build --features python --out dist
+        run: maturin build --features python,onnx-runtime --out dist
 
       - name: Install package and test dependencies
         run: |
