@@ -34,9 +34,9 @@
     - [x] globalMaxPool (DONE: shape inference, Python API, ONNX/CoreML converters, 6 tests)
 
 [ ] Normalization operations
-    - batchNormalization
-    - instanceNormalization
-    - layerNormalization
+    - [x] batchNormalization (DONE: shape inference, Python API, ONNX converter, 3 tests)
+    - [x] instanceNormalization (DONE: shape inference, Python API, ONNX converter, 4 tests)
+    - [x] layerNormalization (DONE: shape inference, Python API, ONNX converter, 5 tests)
     - localResponseNormalization
 
 [ ] Reduction operations

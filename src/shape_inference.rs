@@ -700,6 +700,27 @@ pub fn infer_global_pool_shape(
     Ok(output_shape)
 }
 
+/// Infer the output shape for batchNormalization
+/// Batch normalization output has the same shape as input
+pub fn infer_batch_normalization_shape(input_shape: &[u32]) -> Result<Vec<u32>, GraphError> {
+    // Batch normalization preserves the input shape
+    Ok(input_shape.to_vec())
+}
+
+/// Infer the output shape for instanceNormalization
+/// Instance normalization output has the same shape as input
+pub fn infer_instance_normalization_shape(input_shape: &[u32]) -> Result<Vec<u32>, GraphError> {
+    // Instance normalization preserves the input shape
+    Ok(input_shape.to_vec())
+}
+
+/// Infer the output shape for layerNormalization
+/// Layer normalization output has the same shape as input
+pub fn infer_layer_normalization_shape(input_shape: &[u32]) -> Result<Vec<u32>, GraphError> {
+    // Layer normalization preserves the input shape
+    Ok(input_shape.to_vec())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1110,5 +1131,40 @@ mod tests {
         // Input must be 4D
         assert!(infer_global_pool_shape(&[64, 32, 32], &options).is_err());
         assert!(infer_global_pool_shape(&[1, 64, 32, 32, 32], &options).is_err());
+    }
+
+    // Normalization tests
+    #[test]
+    fn test_batch_normalization_shape() {
+        // Batch normalization preserves input shape
+        let output = infer_batch_normalization_shape(&[1, 64, 28, 28]).unwrap();
+        assert_eq!(output, vec![1, 64, 28, 28]);
+
+        let output = infer_batch_normalization_shape(&[8, 128, 14, 14]).unwrap();
+        assert_eq!(output, vec![8, 128, 14, 14]);
+    }
+
+    #[test]
+    fn test_instance_normalization_shape() {
+        // Instance normalization preserves input shape
+        let output = infer_instance_normalization_shape(&[1, 64, 28, 28]).unwrap();
+        assert_eq!(output, vec![1, 64, 28, 28]);
+
+        let output = infer_instance_normalization_shape(&[4, 32, 56, 56]).unwrap();
+        assert_eq!(output, vec![4, 32, 56, 56]);
+    }
+
+    #[test]
+    fn test_layer_normalization_shape() {
+        // Layer normalization preserves input shape
+        let output = infer_layer_normalization_shape(&[1, 64, 28, 28]).unwrap();
+        assert_eq!(output, vec![1, 64, 28, 28]);
+
+        // Works with any dimensional input
+        let output = infer_layer_normalization_shape(&[8, 512]).unwrap();
+        assert_eq!(output, vec![8, 512]);
+
+        let output = infer_layer_normalization_shape(&[2, 10, 768]).unwrap();
+        assert_eq!(output, vec![2, 10, 768]);
     }
 }

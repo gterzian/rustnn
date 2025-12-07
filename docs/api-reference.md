@@ -796,6 +796,229 @@ avg_pooled = builder.global_average_pool(input_op)
 # Can concatenate both for richer representation
 ```
 
+### Normalization Operations
+
+Normalization operations standardize activations to improve training stability and model performance.
+
+#### `batch_normalization(input, mean, variance, scale=None, bias=None, epsilon=1e-5, axis=1)`
+
+Batch normalization operation that normalizes the input across the batch dimension using pre-computed mean and variance statistics.
+
+**Parameters:**
+
+- `input` (MLOperand): Input tensor to normalize
+- `mean` (MLOperand): Pre-computed mean values (1D tensor, size = channels)
+- `variance` (MLOperand): Pre-computed variance values (1D tensor, size = channels)
+- `scale` (MLOperand, optional): Learnable scale parameter (gamma)
+- `bias` (MLOperand, optional): Learnable bias parameter (beta)
+- `epsilon` (float, optional): Small constant for numerical stability. Default: `1e-5`
+- `axis` (int, optional): Feature axis along which normalization occurs. Default: `1`
+
+**Returns:** `MLOperand` - Normalized output tensor (same shape as input)
+
+**Shape Inference:**
+- Output shape = Input shape (preserves dimensions)
+
+**Formula:**
+```
+y = scale * ((x - mean) / sqrt(variance + epsilon)) + bias
+```
+
+**Example: Basic Batch Normalization**
+
+```python
+# Input: [2, 64, 28, 28] (batch=2, channels=64, height=28, width=28)
+input_op = builder.input("input", [2, 64, 28, 28], "float32")
+mean = builder.input("mean", [64], "float32")
+variance = builder.input("variance", [64], "float32")
+
+# Apply batch normalization
+output = builder.batch_normalization(input_op, mean, variance)
+# Output shape: [2, 64, 28, 28]
+```
+
+**Example: With Learnable Parameters**
+
+```python
+# Include scale and bias for training
+input_op = builder.input("input", [4, 128, 14, 14], "float32")
+mean = builder.input("mean", [128], "float32")
+variance = builder.input("variance", [128], "float32")
+scale = builder.input("scale", [128], "float32")  # gamma
+bias = builder.input("bias", [128], "float32")    # beta
+
+output = builder.batch_normalization(
+    input_op, mean, variance,
+    scale=scale, bias=bias,
+    epsilon=1e-5
+)
+```
+
+**Example: Custom Epsilon for Numerical Stability**
+
+```python
+# Use larger epsilon for very small variance values
+input_op = builder.input("input", [1, 256, 7, 7], "float32")
+mean = builder.input("mean", [256], "float32")
+variance = builder.input("variance", [256], "float32")
+
+output = builder.batch_normalization(
+    input_op, mean, variance,
+    epsilon=1e-3  # Larger epsilon for stability
+)
+```
+
+#### `instance_normalization(input, scale=None, bias=None, epsilon=1e-5, layout="nchw")`
+
+Instance normalization operation that normalizes each instance in a batch independently across spatial dimensions. Commonly used in style transfer and image generation tasks.
+
+**Parameters:**
+
+- `input` (MLOperand): Input tensor to normalize (typically 4D: [N, C, H, W])
+- `scale` (MLOperand, optional): Learnable scale parameter (1D tensor, size = channels)
+- `bias` (MLOperand, optional): Learnable bias parameter (1D tensor, size = channels)
+- `epsilon` (float, optional): Small constant for numerical stability. Default: `1e-5`
+- `layout` (str, optional): `"nchw"` or `"nhwc"`. Default: `"nchw"`
+
+**Returns:** `MLOperand` - Normalized output tensor (same shape as input)
+
+**Shape Inference:**
+- Output shape = Input shape (preserves dimensions)
+
+**Formula:**
+```
+For each instance i and channel c:
+  y[i,c] = scale[c] * ((x[i,c] - mean[i,c]) / sqrt(variance[i,c] + epsilon)) + bias[c]
+```
+
+**Example: Basic Instance Normalization**
+
+```python
+# Input: [2, 64, 28, 28]
+input_op = builder.input("input", [2, 64, 28, 28], "float32")
+
+# Apply instance normalization (computes stats per instance)
+output = builder.instance_normalization(input_op)
+# Output shape: [2, 64, 28, 28]
+```
+
+**Example: With Scale and Bias (For Style Transfer)**
+
+```python
+# Instance norm with learnable parameters
+input_op = builder.input("input", [1, 32, 256, 256], "float32")
+scale = builder.input("scale", [32], "float32")
+bias = builder.input("bias", [32], "float32")
+
+output = builder.instance_normalization(
+    input_op,
+    scale=scale,
+    bias=bias,
+    epsilon=1e-5
+)
+```
+
+**Example: NHWC Layout**
+
+```python
+# Use NHWC layout (channels-last)
+input_op = builder.input("input", [2, 28, 28, 64], "float32")
+
+output = builder.instance_normalization(input_op, layout="nhwc")
+# Output shape: [2, 28, 28, 64]
+```
+
+#### `layer_normalization(input, scale=None, bias=None, epsilon=1e-5, axes=None)`
+
+Layer normalization operation that normalizes across feature dimensions within each example. Fundamental for transformer architectures and modern language models.
+
+**Parameters:**
+
+- `input` (MLOperand): Input tensor to normalize
+- `scale` (MLOperand, optional): Learnable scale parameter (gamma)
+- `bias` (MLOperand, optional): Learnable bias parameter (beta)
+- `epsilon` (float, optional): Small constant for numerical stability. Default: `1e-5`
+- `axes` (list[int], optional): Dimensions over which to compute normalization statistics. Default: `[-1]` (last dimension)
+
+**Returns:** `MLOperand` - Normalized output tensor (same shape as input)
+
+**Shape Inference:**
+- Output shape = Input shape (preserves dimensions)
+
+**Formula:**
+```
+y = scale * ((x - mean(x, axes)) / sqrt(variance(x, axes) + epsilon)) + bias
+```
+
+**Example: Basic Layer Normalization (2D)**
+
+```python
+# Input: [2, 512] (batch=2, features=512) - typical for transformers
+input_op = builder.input("input", [2, 512], "float32")
+
+# Normalize over last dimension (features)
+output = builder.layer_normalization(input_op)
+# Output shape: [2, 512]
+```
+
+**Example: With Scale and Bias (Transformer Block)**
+
+```python
+# Layer norm with learnable parameters
+input_op = builder.input("input", [4, 768], "float32")
+scale = builder.input("scale", [768], "float32")  # gamma
+bias = builder.input("bias", [768], "float32")    # beta
+
+output = builder.layer_normalization(
+    input_op,
+    scale=scale,
+    bias=bias,
+    epsilon=1e-12  # Common in transformers
+)
+```
+
+**Example: 3D Input (Sequence Data)**
+
+```python
+# Input: [batch, sequence_length, features]
+input_op = builder.input("input", [2, 10, 512], "float32")
+
+# Normalize over last dimension (feature dimension)
+output = builder.layer_normalization(input_op, axes=[-1])
+# Output shape: [2, 10, 512]
+```
+
+**Example: Multiple Axes Normalization**
+
+```python
+# Normalize over multiple dimensions
+input_op = builder.input("input", [2, 8, 256], "float32")
+
+# Normalize over last two dimensions
+output = builder.layer_normalization(input_op, axes=[-2, -1])
+# Output shape: [2, 8, 256]
+```
+
+**Example: Vision Transformer (ViT) Style**
+
+```python
+# Typical ViT layer normalization setup
+# Input: [batch, num_patches, embedding_dim]
+input_op = builder.input("patches", [1, 196, 768], "float32")
+scale = builder.input("ln_scale", [768], "float32")
+bias = builder.input("ln_bias", [768], "float32")
+
+# Normalize over embedding dimension
+normalized = builder.layer_normalization(
+    input_op,
+    scale=scale,
+    bias=bias,
+    axes=[-1],
+    epsilon=1e-6
+)
+# Output shape: [1, 196, 768]
+```
+
 ### Unary Operations
 
 All unary operations take one operand and return a new operand.

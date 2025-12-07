@@ -819,6 +819,123 @@ def test_global_pool_invalid_layout(builder):
         builder.global_max_pool(input_op, layout="invalid")
 
 
+# Normalization operations tests
+
+
+def test_batch_normalization_basic(builder):
+    """Test basic batch normalization operation"""
+    # Input: [2, 64, 28, 28] (batch, channels, height, width)
+    input_op = builder.input("input", [2, 64, 28, 28], "float32")
+    mean = builder.input("mean", [64], "float32")
+    variance = builder.input("variance", [64], "float32")
+
+    output = builder.batch_normalization(input_op, mean, variance)
+    assert output.shape == [2, 64, 28, 28], f"Expected [2, 64, 28, 28], got {output.shape}"
+
+
+def test_batch_normalization_with_scale_bias(builder):
+    """Test batch normalization with optional scale and bias"""
+    input_op = builder.input("input", [1, 32, 14, 14], "float32")
+    mean = builder.input("mean", [32], "float32")
+    variance = builder.input("variance", [32], "float32")
+    scale = builder.input("scale", [32], "float32")
+    bias = builder.input("bias", [32], "float32")
+
+    output = builder.batch_normalization(
+        input_op, mean, variance, scale=scale, bias=bias, epsilon=1e-5, axis=1
+    )
+    assert output.shape == [1, 32, 14, 14]
+
+
+def test_batch_normalization_custom_epsilon(builder):
+    """Test batch normalization with custom epsilon"""
+    input_op = builder.input("input", [4, 128, 7, 7], "float32")
+    mean = builder.input("mean", [128], "float32")
+    variance = builder.input("variance", [128], "float32")
+
+    output = builder.batch_normalization(input_op, mean, variance, epsilon=1e-3)
+    assert output.shape == [4, 128, 7, 7]
+
+
+def test_instance_normalization_basic(builder):
+    """Test basic instance normalization operation"""
+    # Input: [2, 64, 28, 28]
+    input_op = builder.input("input", [2, 64, 28, 28], "float32")
+
+    output = builder.instance_normalization(input_op)
+    assert output.shape == [2, 64, 28, 28], f"Expected [2, 64, 28, 28], got {output.shape}"
+
+
+def test_instance_normalization_with_scale_bias(builder):
+    """Test instance normalization with scale and bias"""
+    input_op = builder.input("input", [1, 32, 14, 14], "float32")
+    scale = builder.input("scale", [32], "float32")
+    bias = builder.input("bias", [32], "float32")
+
+    output = builder.instance_normalization(input_op, scale=scale, bias=bias)
+    assert output.shape == [1, 32, 14, 14]
+
+
+def test_instance_normalization_nhwc(builder):
+    """Test instance normalization with NHWC layout"""
+    input_op = builder.input("input", [2, 28, 28, 64], "float32")
+
+    output = builder.instance_normalization(input_op, layout="nhwc")
+    assert output.shape == [2, 28, 28, 64]
+
+
+def test_instance_normalization_custom_epsilon(builder):
+    """Test instance normalization with custom epsilon"""
+    input_op = builder.input("input", [4, 128, 7, 7], "float32")
+
+    output = builder.instance_normalization(input_op, epsilon=1e-6)
+    assert output.shape == [4, 128, 7, 7]
+
+
+def test_layer_normalization_basic(builder):
+    """Test basic layer normalization operation"""
+    # Input: [2, 512] (batch, features) - typical for transformers
+    input_op = builder.input("input", [2, 512], "float32")
+
+    output = builder.layer_normalization(input_op)
+    assert output.shape == [2, 512], f"Expected [2, 512], got {output.shape}"
+
+
+def test_layer_normalization_with_scale_bias(builder):
+    """Test layer normalization with scale and bias"""
+    input_op = builder.input("input", [4, 768], "float32")
+    scale = builder.input("scale", [768], "float32")
+    bias = builder.input("bias", [768], "float32")
+
+    output = builder.layer_normalization(input_op, scale=scale, bias=bias)
+    assert output.shape == [4, 768]
+
+
+def test_layer_normalization_3d_input(builder):
+    """Test layer normalization with 3D input (sequence data)"""
+    # Input: [2, 10, 512] (batch, sequence_length, features)
+    input_op = builder.input("input", [2, 10, 512], "float32")
+
+    output = builder.layer_normalization(input_op, axes=[-1])
+    assert output.shape == [2, 10, 512]
+
+
+def test_layer_normalization_custom_axes(builder):
+    """Test layer normalization with custom axes"""
+    input_op = builder.input("input", [2, 8, 256], "float32")
+
+    output = builder.layer_normalization(input_op, axes=[-2, -1])
+    assert output.shape == [2, 8, 256]
+
+
+def test_layer_normalization_custom_epsilon(builder):
+    """Test layer normalization with custom epsilon"""
+    input_op = builder.input("input", [1, 1024], "float32")
+
+    output = builder.layer_normalization(input_op, epsilon=1e-12)
+    assert output.shape == [1, 1024]
+
+
 def test_reshape_valid(builder):
     """Test valid reshape operation"""
     x = builder.input("x", [2, 3], "float32")

@@ -774,6 +774,208 @@ impl PyMLGraphBuilder {
         Ok(py_operand)
     }
 
+    // Normalization operations
+
+    /// Batch Normalization operation
+    #[pyo3(signature = (input, mean, variance, scale=None, bias=None, epsilon=1e-5, axis=1))]
+    fn batch_normalization(
+        &mut self,
+        input: &PyMLOperand,
+        mean: &PyMLOperand,
+        variance: &PyMLOperand,
+        scale: Option<&PyMLOperand>,
+        bias: Option<&PyMLOperand>,
+        epsilon: f32,
+        axis: i32,
+    ) -> PyResult<PyMLOperand> {
+        use crate::shape_inference::infer_batch_normalization_shape;
+
+        // Infer output shape (same as input for batch normalization)
+        let output_shape = infer_batch_normalization_shape(&input.descriptor.shape)
+            .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+
+        // Create output descriptor
+        let output_descriptor = OperandDescriptor {
+            data_type: input.descriptor.data_type,
+            shape: output_shape,
+            pending_permutation: Vec::new(),
+        };
+
+        let output_id = self.next_operand_id;
+        self.next_operand_id += 1;
+
+        // Build input operands list
+        let mut input_operands = vec![input.id, mean.id, variance.id];
+        if let Some(s) = scale {
+            input_operands.push(s.id);
+        }
+        if let Some(b) = bias {
+            input_operands.push(b.id);
+        }
+
+        let attributes = serde_json::json!({
+            "epsilon": epsilon,
+            "axis": axis,
+            "has_scale": scale.is_some(),
+            "has_bias": bias.is_some(),
+        });
+
+        let operation = Operation {
+            op_type: "batchNormalization".to_string(),
+            input_operands,
+            output_operand: output_id,
+            attributes,
+            label: None,
+        };
+
+        self.operations.push(operation);
+
+        let output_operand = Operand {
+            descriptor: output_descriptor.clone(),
+            kind: OperandKind::Output,
+            name: None,
+        };
+        self.operands.push(output_operand);
+
+        let py_operand = PyMLOperand::new(output_id, output_descriptor, OperandKind::Output, None);
+        self.operand_map.insert(output_id, py_operand.clone());
+
+        Ok(py_operand)
+    }
+
+    /// Instance Normalization operation
+    #[pyo3(signature = (input, scale=None, bias=None, epsilon=1e-5, layout=None))]
+    fn instance_normalization(
+        &mut self,
+        input: &PyMLOperand,
+        scale: Option<&PyMLOperand>,
+        bias: Option<&PyMLOperand>,
+        epsilon: f32,
+        layout: Option<&str>,
+    ) -> PyResult<PyMLOperand> {
+        use crate::shape_inference::infer_instance_normalization_shape;
+
+        // Infer output shape (same as input for instance normalization)
+        let output_shape = infer_instance_normalization_shape(&input.descriptor.shape)
+            .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+
+        // Create output descriptor
+        let output_descriptor = OperandDescriptor {
+            data_type: input.descriptor.data_type,
+            shape: output_shape,
+            pending_permutation: Vec::new(),
+        };
+
+        let output_id = self.next_operand_id;
+        self.next_operand_id += 1;
+
+        // Build input operands list
+        let mut input_operands = vec![input.id];
+        if let Some(s) = scale {
+            input_operands.push(s.id);
+        }
+        if let Some(b) = bias {
+            input_operands.push(b.id);
+        }
+
+        let attributes = serde_json::json!({
+            "epsilon": epsilon,
+            "layout": layout.unwrap_or("nchw"),
+            "has_scale": scale.is_some(),
+            "has_bias": bias.is_some(),
+        });
+
+        let operation = Operation {
+            op_type: "instanceNormalization".to_string(),
+            input_operands,
+            output_operand: output_id,
+            attributes,
+            label: None,
+        };
+
+        self.operations.push(operation);
+
+        let output_operand = Operand {
+            descriptor: output_descriptor.clone(),
+            kind: OperandKind::Output,
+            name: None,
+        };
+        self.operands.push(output_operand);
+
+        let py_operand = PyMLOperand::new(output_id, output_descriptor, OperandKind::Output, None);
+        self.operand_map.insert(output_id, py_operand.clone());
+
+        Ok(py_operand)
+    }
+
+    /// Layer Normalization operation
+    #[pyo3(signature = (input, scale=None, bias=None, epsilon=1e-5, axes=None))]
+    fn layer_normalization(
+        &mut self,
+        input: &PyMLOperand,
+        scale: Option<&PyMLOperand>,
+        bias: Option<&PyMLOperand>,
+        epsilon: f32,
+        axes: Option<Vec<i32>>,
+    ) -> PyResult<PyMLOperand> {
+        use crate::shape_inference::infer_layer_normalization_shape;
+
+        // Infer output shape (same as input for layer normalization)
+        let output_shape = infer_layer_normalization_shape(&input.descriptor.shape)
+            .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+
+        // Create output descriptor
+        let output_descriptor = OperandDescriptor {
+            data_type: input.descriptor.data_type,
+            shape: output_shape,
+            pending_permutation: Vec::new(),
+        };
+
+        let output_id = self.next_operand_id;
+        self.next_operand_id += 1;
+
+        // Build input operands list
+        let mut input_operands = vec![input.id];
+        if let Some(s) = scale {
+            input_operands.push(s.id);
+        }
+        if let Some(b) = bias {
+            input_operands.push(b.id);
+        }
+
+        // Default to normalizing over last dimension if axes not specified
+        let norm_axes = axes.unwrap_or_else(|| vec![-1]);
+
+        let attributes = serde_json::json!({
+            "epsilon": epsilon,
+            "axes": norm_axes,
+            "has_scale": scale.is_some(),
+            "has_bias": bias.is_some(),
+        });
+
+        let operation = Operation {
+            op_type: "layerNormalization".to_string(),
+            input_operands,
+            output_operand: output_id,
+            attributes,
+            label: None,
+        };
+
+        self.operations.push(operation);
+
+        let output_operand = Operand {
+            descriptor: output_descriptor.clone(),
+            kind: OperandKind::Output,
+            name: None,
+        };
+        self.operands.push(output_operand);
+
+        let py_operand = PyMLOperand::new(output_id, output_descriptor, OperandKind::Output, None);
+        self.operand_map.insert(output_id, py_operand.clone());
+
+        Ok(py_operand)
+    }
+
     // Unary operations
 
     /// ReLU activation

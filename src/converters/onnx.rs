@@ -50,6 +50,15 @@ impl OnnxConverter {
         if op_type.eq_ignore_ascii_case("globalMaxPool") {
             return "GlobalMaxPool".to_string();
         }
+        if op_type.eq_ignore_ascii_case("batchNormalization") {
+            return "BatchNormalization".to_string();
+        }
+        if op_type.eq_ignore_ascii_case("instanceNormalization") {
+            return "InstanceNormalization".to_string();
+        }
+        if op_type.eq_ignore_ascii_case("layerNormalization") {
+            return "LayerNormalization".to_string();
+        }
 
         // Default: capitalize first letter
         let mut chars = op_type.chars();
