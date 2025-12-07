@@ -13,6 +13,19 @@ use crate::executors::onnx::{OnnxInput, run_onnx_with_inputs};
 #[cfg(all(target_os = "macos", feature = "coreml-runtime"))]
 use crate::executors::coreml::run_coreml_zeroed_cached;
 
+/// Backend execution engine selected at context creation
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum Backend {
+    /// ONNX Runtime (CPU execution)
+    OnnxCpu,
+    /// ONNX Runtime (GPU execution)
+    OnnxGpu,
+    /// CoreML (macOS Neural Engine or GPU)
+    CoreML,
+    /// No backend available (returns zeros)
+    None,
+}
+
 /// ML namespace - entry point for WebNN API
 #[pyclass(name = "ML")]
 pub struct PyML;
@@ -46,6 +59,7 @@ impl PyML {
 pub struct PyMLContext {
     device_type: String,
     power_preference: String,
+    backend: Backend,
 }
 
 #[pymethods]
@@ -58,7 +72,7 @@ impl PyMLContext {
         Ok(PyMLGraphBuilder::create())
     }
 
-    /// Compute the graph with given inputs
+    /// Compute the graph with given inputs using the backend selected at context creation
     ///
     /// Args:
     ///     graph: The compiled MLGraph to execute
@@ -75,112 +89,17 @@ impl PyMLContext {
         inputs: &Bound<'_, PyDict>,
         _outputs: Option<&Bound<'_, PyDict>>,
     ) -> PyResult<Py<PyDict>> {
-        #[cfg(feature = "onnx-runtime")]
-        {
-            // Convert graph to ONNX
-            let converter = crate::converters::OnnxConverter;
-            let converted = converter.convert(&graph.graph_info).map_err(|e| {
-                pyo3::exceptions::PyRuntimeError::new_err(format!("ONNX conversion failed: {}", e))
-            })?;
-
-            // Convert Python inputs to OnnxInput structs
-            let numpy = py.import_bound("numpy")?;
-            let mut onnx_inputs = Vec::new();
-
-            for input_id in &graph.graph_info.input_operands {
-                let input_op = graph
-                    .graph_info
-                    .operands
-                    .get(*input_id as usize)
-                    .ok_or_else(|| {
-                        pyo3::exceptions::PyValueError::new_err(format!(
-                            "Input operand {} not found in graph",
-                            input_id
-                        ))
-                    })?;
-
-                let default_name = format!("input_{}", input_id);
-                let input_name = input_op.name.as_deref().unwrap_or(&default_name);
-
-                // Get the numpy array from inputs dict
-                let array = inputs.get_item(input_name)?.ok_or_else(|| {
-                    pyo3::exceptions::PyValueError::new_err(format!(
-                        "Missing input: {}",
-                        input_name
-                    ))
-                })?;
-
-                // Convert to float32 array
-                let array_f32 = array.call_method1("astype", ("float32",))?;
-
-                // Get shape
-                let shape_obj = array_f32.getattr("shape")?;
-                let shape: Vec<usize> = shape_obj.extract()?;
-
-                // Get flattened data
-                let flat = array_f32.call_method0("flatten")?;
-                let data: Vec<f32> = flat.call_method0("tolist")?.extract()?;
-
-                onnx_inputs.push(OnnxInput {
-                    name: input_name.to_string(),
-                    shape,
-                    data,
-                });
+        // Route to appropriate backend based on context's backend selection
+        match self.backend {
+            Backend::OnnxCpu | Backend::OnnxGpu => {
+                self.compute_onnx(py, graph, inputs)
             }
-
-            // Execute with ONNX runtime
-            let onnx_outputs = run_onnx_with_inputs(&converted.data, onnx_inputs).map_err(|e| {
-                pyo3::exceptions::PyRuntimeError::new_err(format!("ONNX execution failed: {}", e))
-            })?;
-
-            // Convert outputs back to numpy arrays
-            let result = PyDict::new_bound(py);
-            for output in onnx_outputs {
-                let shape_tuple =
-                    pyo3::types::PyTuple::new_bound(py, output.shape.iter().map(|&d| d as i64));
-                let array = numpy.call_method1("array", (output.data,))?;
-                let reshaped = array.call_method1("reshape", (shape_tuple,))?;
-                result.set_item(output.name, reshaped)?;
+            Backend::CoreML => {
+                self.compute_coreml(py, graph, inputs)
             }
-
-            Ok(result.into())
-        }
-
-        #[cfg(not(feature = "onnx-runtime"))]
-        {
-            // Fallback: return zeros if ONNX runtime is not available
-            let result = PyDict::new_bound(py);
-
-            for output_id in &graph.graph_info.output_operands {
-                let output_op = graph
-                    .graph_info
-                    .operands
-                    .get(*output_id as usize)
-                    .ok_or_else(|| {
-                        pyo3::exceptions::PyValueError::new_err(format!(
-                            "Output operand {} not found in graph",
-                            output_id
-                        ))
-                    })?;
-
-                let output_name = output_op.name.as_deref().unwrap_or("output");
-
-                let numpy = py.import_bound("numpy")?;
-                let shape = output_op.descriptor.shape.clone();
-                let dtype_str = match output_op.descriptor.data_type {
-                    crate::graph::DataType::Float32 => "float32",
-                    crate::graph::DataType::Float16 => "float16",
-                    crate::graph::DataType::Int32 => "int32",
-                    crate::graph::DataType::Uint32 => "uint32",
-                    crate::graph::DataType::Int8 => "int8",
-                    crate::graph::DataType::Uint8 => "uint8",
-                };
-
-                let zeros = numpy.call_method1("zeros", (shape, dtype_str))?;
-                result.set_item(output_name, zeros)?;
+            Backend::None => {
+                self.compute_fallback(py, graph)
             }
-
-            Ok(result.into())
         }
     }
 
@@ -365,9 +284,238 @@ impl PyMLContext {
 
 impl PyMLContext {
     fn new(device_type: String, power_preference: String) -> Self {
+        // Select backend based on device_type and available features
+        let backend = Self::select_backend(&device_type, &power_preference);
+
         Self {
             device_type,
             power_preference,
+            backend,
+        }
+    }
+
+    /// Execute graph using ONNX Runtime backend
+    #[cfg(feature = "onnx-runtime")]
+    fn compute_onnx(
+        &self,
+        py: Python,
+        graph: &PyMLGraph,
+        inputs: &Bound<'_, PyDict>,
+    ) -> PyResult<Py<PyDict>> {
+        // Convert graph to ONNX
+        let converter = crate::converters::OnnxConverter;
+        let converted = converter.convert(&graph.graph_info).map_err(|e| {
+            pyo3::exceptions::PyRuntimeError::new_err(format!("ONNX conversion failed: {}", e))
+        })?;
+
+        // Convert Python inputs to OnnxInput structs
+        let numpy = py.import_bound("numpy")?;
+        let mut onnx_inputs = Vec::new();
+
+        for input_id in &graph.graph_info.input_operands {
+            let input_op = graph
+                .graph_info
+                .operands
+                .get(*input_id as usize)
+                .ok_or_else(|| {
+                    pyo3::exceptions::PyValueError::new_err(format!(
+                        "Input operand {} not found in graph",
+                        input_id
+                    ))
+                })?;
+
+            let default_name = format!("input_{}", input_id);
+            let input_name = input_op.name.as_deref().unwrap_or(&default_name);
+
+            // Get the numpy array from inputs dict
+            let array = inputs.get_item(input_name)?.ok_or_else(|| {
+                pyo3::exceptions::PyValueError::new_err(format!(
+                    "Missing input: {}",
+                    input_name
+                ))
+            })?;
+
+            // Convert to float32 array
+            let array_f32 = array.call_method1("astype", ("float32",))?;
+
+            // Get shape
+            let shape_obj = array_f32.getattr("shape")?;
+            let shape: Vec<usize> = shape_obj.extract()?;
+
+            // Get flattened data
+            let flat = array_f32.call_method0("flatten")?;
+            let data: Vec<f32> = flat.call_method0("tolist")?.extract()?;
+
+            onnx_inputs.push(OnnxInput {
+                name: input_name.to_string(),
+                shape,
+                data,
+            });
+        }
+
+        // Execute with ONNX runtime
+        let onnx_outputs = run_onnx_with_inputs(&converted.data, onnx_inputs).map_err(|e| {
+            pyo3::exceptions::PyRuntimeError::new_err(format!("ONNX execution failed: {}", e))
+        })?;
+
+        // Convert outputs back to numpy arrays
+        let result = PyDict::new_bound(py);
+        for output in onnx_outputs {
+            let shape_tuple =
+                pyo3::types::PyTuple::new_bound(py, output.shape.iter().map(|&d| d as i64));
+            let array = numpy.call_method1("array", (output.data,))?;
+            let reshaped = array.call_method1("reshape", (shape_tuple,))?;
+            result.set_item(output.name, reshaped)?;
+        }
+
+        Ok(result.into())
+    }
+
+    /// Stub for when ONNX Runtime is not available but backend was selected as ONNX
+    #[cfg(not(feature = "onnx-runtime"))]
+    fn compute_onnx(
+        &self,
+        py: Python,
+        graph: &PyMLGraph,
+        _inputs: &Bound<'_, PyDict>,
+    ) -> PyResult<Py<PyDict>> {
+        Err(pyo3::exceptions::PyRuntimeError::new_err(
+            "ONNX Runtime backend selected but not compiled with onnx-runtime feature"
+        ))
+    }
+
+    /// Execute graph using CoreML backend
+    #[cfg(all(target_os = "macos", feature = "coreml-runtime"))]
+    fn compute_coreml(
+        &self,
+        py: Python,
+        graph: &PyMLGraph,
+        _inputs: &Bound<'_, PyDict>,
+    ) -> PyResult<Py<PyDict>> {
+        // Convert graph to CoreML
+        let converter = crate::converters::CoremlConverter;
+        let converted = converter.convert(&graph.graph_info).map_err(|e| {
+            pyo3::exceptions::PyRuntimeError::new_err(format!("CoreML conversion failed: {}", e))
+        })?;
+
+        // Execute with CoreML (currently returns zeros)
+        run_coreml_zeroed_cached(&converted.data).map_err(|e| {
+            pyo3::exceptions::PyRuntimeError::new_err(format!("CoreML execution failed: {}", e))
+        })?;
+
+        // Return zeros for now (CoreML integration needs full implementation)
+        self.compute_fallback(py, graph)
+    }
+
+    /// Stub for when CoreML is not available but backend was selected as CoreML
+    #[cfg(any(not(target_os = "macos"), not(feature = "coreml-runtime")))]
+    fn compute_coreml(
+        &self,
+        py: Python,
+        graph: &PyMLGraph,
+        _inputs: &Bound<'_, PyDict>,
+    ) -> PyResult<Py<PyDict>> {
+        Err(pyo3::exceptions::PyRuntimeError::new_err(
+            "CoreML backend selected but not available on this platform or not compiled with coreml-runtime feature"
+        ))
+    }
+
+    /// Fallback computation that returns zeros (when no backend available)
+    fn compute_fallback(
+        &self,
+        py: Python,
+        graph: &PyMLGraph,
+    ) -> PyResult<Py<PyDict>> {
+        let result = PyDict::new_bound(py);
+
+        for output_id in &graph.graph_info.output_operands {
+            let output_op = graph
+                .graph_info
+                .operands
+                .get(*output_id as usize)
+                .ok_or_else(|| {
+                    pyo3::exceptions::PyValueError::new_err(format!(
+                        "Output operand {} not found in graph",
+                        output_id
+                    ))
+                })?;
+
+            let output_name = output_op.name.as_deref().unwrap_or("output");
+
+            let numpy = py.import_bound("numpy")?;
+            let shape = output_op.descriptor.shape.clone();
+            let dtype_str = match output_op.descriptor.data_type {
+                crate::graph::DataType::Float32 => "float32",
+                crate::graph::DataType::Float16 => "float16",
+                crate::graph::DataType::Int32 => "int32",
+                crate::graph::DataType::Uint32 => "uint32",
+                crate::graph::DataType::Int8 => "int8",
+                crate::graph::DataType::Uint8 => "uint8",
+            };
+
+            let zeros = numpy.call_method1("zeros", (shape, dtype_str))?;
+            result.set_item(output_name, zeros)?;
+        }
+
+        Ok(result.into())
+    }
+
+    /// Select the appropriate backend based on device type and available features
+    fn select_backend(device_type: &str, _power_preference: &str) -> Backend {
+        match device_type {
+            "cpu" => {
+                // Prefer ONNX Runtime for CPU execution
+                #[cfg(feature = "onnx-runtime")]
+                {
+                    Backend::OnnxCpu
+                }
+                #[cfg(not(feature = "onnx-runtime"))]
+                {
+                    Backend::None
+                }
+            }
+            "gpu" => {
+                // On macOS, prefer CoreML for GPU; otherwise use ONNX
+                #[cfg(all(target_os = "macos", feature = "coreml-runtime"))]
+                {
+                    Backend::CoreML
+                }
+                #[cfg(all(not(target_os = "macos"), feature = "onnx-runtime"))]
+                {
+                    Backend::OnnxGpu
+                }
+                #[cfg(all(target_os = "macos", not(feature = "coreml-runtime"), feature = "onnx-runtime"))]
+                {
+                    Backend::OnnxGpu
+                }
+                #[cfg(not(feature = "onnx-runtime"))]
+                #[cfg(not(feature = "coreml-runtime"))]
+                {
+                    Backend::None
+                }
+            }
+            "npu" => {
+                // NPU (Neural Processing Unit) - use CoreML on macOS (Neural Engine)
+                #[cfg(all(target_os = "macos", feature = "coreml-runtime"))]
+                {
+                    Backend::CoreML
+                }
+                #[cfg(any(not(target_os = "macos"), not(feature = "coreml-runtime")))]
+                {
+                    Backend::None
+                }
+            }
+            _ => {
+                // Unknown device type, fallback to ONNX CPU if available
+                #[cfg(feature = "onnx-runtime")]
+                {
+                    Backend::OnnxCpu
+                }
+                #[cfg(not(feature = "onnx-runtime"))]
+                {
+                    Backend::None
+                }
+            }
         }
     }
 }

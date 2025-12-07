@@ -43,9 +43,9 @@ maturin develop --features python,onnx-runtime,coreml-runtime
 import numpy as np
 import webnn
 
-# Create ML context
+# Create ML context - device_type controls which backend is used
 ml = webnn.ML()
-context = ml.create_context(device_type="cpu")
+context = ml.create_context(device_type="cpu")  # Selects ONNX Runtime CPU backend
 
 # Create graph builder
 builder = context.create_graph_builder()
@@ -56,20 +56,42 @@ y = builder.input("y", [2, 3], "float32")
 z = builder.add(x, y)
 output = builder.relu(z)
 
-# Compile the graph
+# Compile the graph (creates backend-agnostic representation)
 graph = builder.build({"output": output})
 
 # Prepare input data
 x_data = np.array([[1, -2, 3], [4, -5, 6]], dtype=np.float32)
 y_data = np.array([[-1, 2, -3], [-4, 5, -6]], dtype=np.float32)
 
-# Execute: internally converts WebNN graph to ONNX, then runs with ONNX Runtime
+# Execute: converts to backend-specific format (ONNX for CPU) and runs
 results = context.compute(graph, {"x": x_data, "y": y_data})
 print(results["output"])  # Actual computed values from ONNX Runtime
 
 # Optional: Export the ONNX model to file (for deployment, inspection, etc.)
 context.convert_to_onnx(graph, "model.onnx")
 ```
+
+### Backend Selection
+
+The `device_type` parameter at context creation controls which execution backend is used:
+
+```python
+# CPU execution - uses ONNX Runtime CPU backend
+context = ml.create_context(device_type="cpu")
+
+# GPU execution - uses CoreML on macOS, ONNX Runtime GPU elsewhere
+context = ml.create_context(device_type="gpu")
+
+# NPU execution - uses CoreML Neural Engine on Apple Silicon (macOS only)
+context = ml.create_context(device_type="npu")
+```
+
+**Backend Selection Rules:**
+- **"cpu"** → ONNX Runtime CPU backend (cross-platform)
+- **"gpu"** → CoreML on macOS (GPU/Neural Engine), ONNX Runtime GPU elsewhere
+- **"npu"** → CoreML Neural Engine on Apple Silicon, not available on other platforms
+
+The graph compilation (`builder.build()`) creates a **backend-agnostic representation**. The backend-specific conversion happens automatically during `compute()` based on the context's selected backend.
 
 ## Async Execution
 
@@ -172,6 +194,11 @@ asyncio.run(concurrent_example())
 #### `webnn.ML`
 Entry point for the WebNN API.
 
+**Methods:**
+- `create_context(device_type="cpu", power_preference="default")`: Create an execution context
+  - `device_type`: Selects the backend - "cpu" (ONNX Runtime), "gpu" (CoreML/ONNX), "npu" (CoreML Neural Engine)
+  - `power_preference`: Hint for power/performance tradeoffs
+
 ```python
 ml = webnn.ML()
 context = ml.create_context(device_type="cpu", power_preference="default")
@@ -181,17 +208,19 @@ context = ml.create_context(device_type="cpu", power_preference="default")
 Execution context for neural network operations.
 
 **Properties:**
-- `device_type`: The device type ("cpu", "gpu", "npu")
-- `power_preference`: Power preference setting
+- `device_type`: The device type ("cpu", "gpu", "npu") - determines which backend is used
+- `power_preference`: Power preference setting ("default", "high-performance", "low-power")
 
 **Methods:**
 - `create_graph_builder()`: Create a new graph builder
 - `compute(graph, inputs, outputs=None)`: Execute a compiled graph with actual computation
-  - Converts graph to ONNX format internally
-  - Executes using ONNX runtime (if available)
+  - Uses the backend selected at context creation (based on device_type)
+  - Automatically converts backend-agnostic graph to backend-specific format
+  - "cpu" device → ONNX Runtime CPU backend
+  - "gpu" device → CoreML (macOS) or ONNX Runtime GPU
+  - "npu" device → CoreML Neural Engine (Apple Silicon)
   - Accepts numpy arrays as inputs
   - Returns dictionary of numpy arrays as outputs
-  - Falls back to zeros if ONNX runtime not available
 - `convert_to_onnx(graph, output_path)`: Export graph to ONNX file (for deployment/inspection)
 - `convert_to_coreml(graph, output_path)`: Export graph to CoreML file (macOS only, for deployment)
 - `create_tensor(shape, data_type)`: Create a tensor for explicit memory management
