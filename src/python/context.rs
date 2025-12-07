@@ -91,15 +91,9 @@ impl PyMLContext {
     ) -> PyResult<Py<PyDict>> {
         // Route to appropriate backend based on context's backend selection
         match self.backend {
-            Backend::OnnxCpu | Backend::OnnxGpu => {
-                self.compute_onnx(py, graph, inputs)
-            }
-            Backend::CoreML => {
-                self.compute_coreml(py, graph, inputs)
-            }
-            Backend::None => {
-                self.compute_fallback(py, graph)
-            }
+            Backend::OnnxCpu | Backend::OnnxGpu => self.compute_onnx(py, graph, inputs),
+            Backend::CoreML => self.compute_coreml(py, graph, inputs),
+            Backend::None => self.compute_fallback(py, graph),
         }
     }
 
@@ -329,10 +323,7 @@ impl PyMLContext {
 
             // Get the numpy array from inputs dict
             let array = inputs.get_item(input_name)?.ok_or_else(|| {
-                pyo3::exceptions::PyValueError::new_err(format!(
-                    "Missing input: {}",
-                    input_name
-                ))
+                pyo3::exceptions::PyValueError::new_err(format!("Missing input: {}", input_name))
             })?;
 
             // Convert to float32 array
@@ -380,7 +371,7 @@ impl PyMLContext {
         _inputs: &Bound<'_, PyDict>,
     ) -> PyResult<Py<PyDict>> {
         Err(pyo3::exceptions::PyRuntimeError::new_err(
-            "ONNX Runtime backend selected but not compiled with onnx-runtime feature"
+            "ONNX Runtime backend selected but not compiled with onnx-runtime feature",
         ))
     }
 
@@ -416,16 +407,12 @@ impl PyMLContext {
         _inputs: &Bound<'_, PyDict>,
     ) -> PyResult<Py<PyDict>> {
         Err(pyo3::exceptions::PyRuntimeError::new_err(
-            "CoreML backend selected but not available on this platform or not compiled with coreml-runtime feature"
+            "CoreML backend selected but not available on this platform or not compiled with coreml-runtime feature",
         ))
     }
 
     /// Fallback computation that returns zeros (when no backend available)
-    fn compute_fallback(
-        &self,
-        py: Python,
-        graph: &PyMLGraph,
-    ) -> PyResult<Py<PyDict>> {
+    fn compute_fallback(&self, py: Python, graph: &PyMLGraph) -> PyResult<Py<PyDict>> {
         let result = PyDict::new_bound(py);
 
         for output_id in &graph.graph_info.output_operands {
@@ -484,7 +471,11 @@ impl PyMLContext {
                 {
                     Backend::OnnxGpu
                 }
-                #[cfg(all(target_os = "macos", not(feature = "coreml-runtime"), feature = "onnx-runtime"))]
+                #[cfg(all(
+                    target_os = "macos",
+                    not(feature = "coreml-runtime"),
+                    feature = "onnx-runtime"
+                ))]
                 {
                     Backend::OnnxGpu
                 }
