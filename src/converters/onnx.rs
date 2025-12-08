@@ -442,10 +442,32 @@ impl crate::converters::GraphConverter for OnnxConverter {
             let operand = graph
                 .operand(id)
                 .ok_or_else(|| GraphError::InvalidConversionOperand { operand: id })?;
-            outputs_val.push(value_info(
-                &Self::operand_name(graph, id),
-                &operand.descriptor,
-            ));
+
+            // Logic operations output uint8 in WebNN but float32 in ONNX (for executor compatibility)
+            let mut descriptor = operand.descriptor.clone();
+            if descriptor.data_type == DataType::Uint8 {
+                // Check if this output comes from a logic operation
+                let is_logic_output = graph.operations.iter().any(|op| {
+                    op.output_operand == id
+                        && matches!(
+                            op.op_type.as_str(),
+                            "equal"
+                                | "greater"
+                                | "greaterOrEqual"
+                                | "lesser"
+                                | "lesserOrEqual"
+                                | "logicalNot"
+                                | "logicalAnd"
+                                | "logicalOr"
+                                | "logicalXor"
+                        )
+                });
+                if is_logic_output {
+                    descriptor.data_type = DataType::Float32;
+                }
+            }
+
+            outputs_val.push(value_info(&Self::operand_name(graph, id), &descriptor));
         }
 
         for (id, data) in &graph.constant_operand_ids_to_handles {
@@ -514,12 +536,12 @@ impl crate::converters::GraphConverter for OnnxConverter {
                     ..Default::default()
                 });
 
-                // Cast bool output -> uint8
+                // Cast bool output -> float (for executor compatibility)
                 nodes.push(Self::create_cast_node(
-                    &format!("cast_to_uint8_{}", cast_counter),
+                    &format!("cast_to_float_{}", cast_counter),
                     bool_output_name,
                     Self::operand_name(graph, op.output_operand),
-                    ProtoDataType::Uint8,
+                    ProtoDataType::Float,
                 ));
                 cast_counter += 1;
             } else if is_comparison_op {
@@ -541,12 +563,12 @@ impl crate::converters::GraphConverter for OnnxConverter {
                     ..Default::default()
                 });
 
-                // Cast bool output -> uint8
+                // Cast bool output -> float (for executor compatibility)
                 nodes.push(Self::create_cast_node(
-                    &format!("cast_to_uint8_{}", cast_counter),
+                    &format!("cast_to_float_{}", cast_counter),
                     bool_output_name,
                     Self::operand_name(graph, op.output_operand),
-                    ProtoDataType::Uint8,
+                    ProtoDataType::Float,
                 ));
                 cast_counter += 1;
             } else {
