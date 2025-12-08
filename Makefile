@@ -151,17 +151,35 @@ mobilenet-demo: python-dev
 
 text-gen-demo: python-dev
 	@echo "========================================================================"
-	@echo "Text Generation Demo with Attention (WebNN)"
+	@echo "Running Text Generation Demo on All Backends"
 	@echo "========================================================================"
 	@echo ""
+	@echo "Backend 1/3: ONNX CPU"
+	@echo "------------------------------------------------------------------------"
 	@if [ -f .venv-webnn/bin/python ]; then \
 		DYLD_LIBRARY_PATH=$(ORT_LIB_DIR) .venv-webnn/bin/python examples/text_generation_gpt.py --prompt "Hello world" --tokens 30 --temperature 0.8 --backend cpu; \
 	else \
 		DYLD_LIBRARY_PATH=$(ORT_LIB_DIR) python examples/text_generation_gpt.py --prompt "Hello world" --tokens 30 --temperature 0.8 --backend cpu; \
 	fi
 	@echo ""
+	@echo "Backend 2/3: ONNX GPU"
+	@echo "------------------------------------------------------------------------"
+	@if [ -f .venv-webnn/bin/python ]; then \
+		DYLD_LIBRARY_PATH=$(ORT_LIB_DIR) .venv-webnn/bin/python examples/text_generation_gpt.py --prompt "Hello world" --tokens 30 --temperature 0.8 --backend gpu; \
+	else \
+		DYLD_LIBRARY_PATH=$(ORT_LIB_DIR) python examples/text_generation_gpt.py --prompt "Hello world" --tokens 30 --temperature 0.8 --backend gpu; \
+	fi
+	@echo ""
+	@echo "Backend 3/3: CoreML (Neural Engine)"
+	@echo "------------------------------------------------------------------------"
+	@if [ -f .venv-webnn/bin/python ]; then \
+		DYLD_LIBRARY_PATH=$(ORT_LIB_DIR) .venv-webnn/bin/python examples/text_generation_gpt.py --prompt "Hello world" --tokens 30 --temperature 0.8 --backend coreml; \
+	else \
+		DYLD_LIBRARY_PATH=$(ORT_LIB_DIR) python examples/text_generation_gpt.py --prompt "Hello world" --tokens 30 --temperature 0.8 --backend coreml; \
+	fi
+	@echo ""
 	@echo "========================================================================"
-	@echo "Text generation demo completed!"
+	@echo "All three backends completed successfully!"
 	@echo "========================================================================"
 
 text-gen-train: python-dev

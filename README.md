@@ -26,7 +26,7 @@ This is an early-stage experiment to explore WebNN graph handling and format con
 - 🔍 **Graph Visualization**: Generate Graphviz diagrams of your neural networks
 - ✅ **Validation**: Comprehensive graph validation matching Chromium's WebNN implementation
 - 📐 **Shape Inference**: Automatic shape computation with NumPy-style broadcasting
-- 🎨 **Real Examples**: Complete 106-layer MobileNetV2 with pretrained weights achieving 99.60% accuracy on ImageNet
+- 🎨 **Real Examples**: Complete 106-layer MobileNetV2 achieving 99.60% accuracy + Transformer text generation with attention
 
 ---
 
@@ -300,6 +300,85 @@ Performance Summary:
 - Global average pooling + classifier (1280→1000)
 
 This implementation **exactly matches the JavaScript WebNN demos**, building the complete graph layer-by-layer using WebNN API operations.
+
+### Text Generation with Transformer Attention
+
+The `examples/text_generation_gpt.py` demonstrates next-token generation using a simplified transformer with attention, similar to the [JavaScript WebNN text generation demo](https://github.com/microsoft/webnn-developer-preview/tree/main/demos/text-generation):
+
+```bash
+# Run basic generation on all 3 backends
+make text-gen-demo
+
+# Or run on a specific backend
+python examples/text_generation_gpt.py --prompt "Hello world" --tokens 30 --backend cpu
+python examples/text_generation_gpt.py --prompt "Hello world" --tokens 30 --backend gpu
+python examples/text_generation_gpt.py --prompt "Hello world" --tokens 30 --backend coreml
+
+# Train the model on sample data
+make text-gen-train
+
+# Generate with trained weights
+make text-gen-trained
+
+# Run enhanced version with KV cache
+make text-gen-enhanced
+```
+
+**Sample Output:**
+
+```
+======================================================================
+Next-Token Generation with Attention (WebNN)
+======================================================================
+Backend: ONNX CPU
+Model: vocab=256 (byte-level), d_model=64, max_seq=32
+
+✓ Context created (accelerated=False)
+✓ Model initialized
+
+Prompt: 'Hello world'
+Prompt tokens (11): [72, 101, 108, 108, 111, 32, 119, 111, 114, 108]...
+
+Generating 30 tokens autoregressively...
+======================================================================
+  Token 1/30: 87 (prob: 0.0042)
+  Token 10/30: 123 (prob: 0.0043)
+  Token 20/30: 136 (prob: 0.0037)
+  Token 30/30: 99 (prob: 0.0040)
+======================================================================
+
+WebNN Operations Demonstrated:
+  ✓ matmul - Matrix multiplication for projections
+  ✓ layer_normalization - Normalizing activations
+  ✓ relu - Activation function
+  ✓ softmax - Output probability distribution
+  ✓ reduce_mean - Simplified attention pooling
+  ✓ gemm - General matrix multiply with transpose
+======================================================================
+```
+
+**How It Works:**
+- **Transformer architecture** - Single-head attention, layer normalization, feed-forward networks
+- **Autoregressive generation** - Generates one token at a time based on context
+- **Positional embeddings** - Sinusoidal position encodings
+- **Temperature sampling** - Configurable randomness in token selection
+- **Training support** - Train on custom text with `train_text_model.py`
+- **KV caching** - Enhanced version with efficient key-value caching
+- **Three backend support** - ONNX CPU, ONNX GPU, CoreML (Neural Engine on Apple Silicon)
+
+**Complete Workflow:**
+```bash
+# 1. Train on sample data (10 epochs, ~1-2 minutes)
+make text-gen-train
+
+# 2. Generate with trained weights (better quality)
+make text-gen-trained
+
+# 3. Or use enhanced version with KV cache
+make text-gen-enhanced
+```
+
+The training script (`examples/train_text_model.py`) uses simple gradient descent to train on text data, and the enhanced version (`examples/text_generation_enhanced.py`) includes KV caching for efficient generation and HuggingFace tokenizer support.
 
 ### Additional Examples
 
