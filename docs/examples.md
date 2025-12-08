@@ -459,7 +459,7 @@ The `examples/` directory contains complete, production-ready examples demonstra
 
 ### Image Classification
 
-**[mobilenetv2_complete.py](../examples/mobilenetv2_complete.py)** - Complete 106-layer pretrained MobileNetV2
+**[mobilenetv2_complete.py](https://github.com/tarekziade/rustnn/blob/main/examples/mobilenetv2_complete.py)** - Complete 106-layer pretrained MobileNetV2
 - Uses all 106 pretrained weight tensors from WebNN test-data
 - Achieves 99.60% accuracy on real ImageNet classification
 - Supports CPU, GPU, and CoreML (Neural Engine) backends
@@ -473,16 +473,16 @@ python examples/mobilenetv2_complete.py examples/images/test.jpg --backend gpu
 python examples/mobilenetv2_complete.py examples/images/test.jpg --backend coreml  # macOS only
 ```
 
-**[mobilenetv2_real.py](../examples/mobilenetv2_real.py)** - Alternative MobileNetV2 implementation
+**[mobilenetv2_real.py](https://github.com/tarekziade/rustnn/blob/main/examples/mobilenetv2_real.py)** - Alternative MobileNetV2 implementation
 - Similar architecture with different weight loading approach
 
-**[image_classification.py](../examples/image_classification.py)** - Simplified image classification
+**[image_classification.py](https://github.com/tarekziade/rustnn/blob/main/examples/image_classification.py)** - Simplified image classification
 - Demonstrates the classification pipeline with random weights
 - Good starting point for understanding the architecture
 
 ### Text Generation with Transformers
 
-**[text_generation_gpt.py](../examples/text_generation_gpt.py)** - Next-token generation with attention
+**[text_generation_gpt.py](https://github.com/tarekziade/rustnn/blob/main/examples/text_generation_gpt.py)** - Next-token generation with attention
 - Simplified transformer architecture with self-attention
 - Autoregressive generation (one token at a time)
 - Positional embeddings and temperature sampling
@@ -493,7 +493,7 @@ python examples/mobilenetv2_complete.py examples/images/test.jpg --backend corem
 python examples/text_generation_gpt.py --prompt "Hello world" --tokens 30 --backend cpu
 ```
 
-**[text_generation_enhanced.py](../examples/text_generation_enhanced.py)** - Enhanced version with KV cache
+**[text_generation_enhanced.py](https://github.com/tarekziade/rustnn/blob/main/examples/text_generation_enhanced.py)** - Enhanced version with KV cache
 - Key-value caching for efficient generation
 - HuggingFace tokenizer support
 - Better performance for longer sequences
@@ -501,7 +501,7 @@ python examples/text_generation_gpt.py --prompt "Hello world" --tokens 30 --back
 
 ### Model Training
 
-**[train_text_model.py](../examples/train_text_model.py)** - Train a text generation model
+**[train_text_model.py](https://github.com/tarekziade/rustnn/blob/main/examples/train_text_model.py)** - Train a text generation model
 - Simple gradient descent training loop
 - Trains on sample text data
 - Saves trained weights to JSON
@@ -523,18 +523,18 @@ python examples/text_generation_gpt.py \
     --tokens 50
 ```
 
-**[train_simple_demo.py](../examples/train_simple_demo.py)** - Simplified training demonstration
+**[train_simple_demo.py](https://github.com/tarekziade/rustnn/blob/main/examples/train_simple_demo.py)** - Simplified training demonstration
 - Minimal example showing the training workflow
 - Good starting point for understanding training
 
 ### Basic Examples
 
-**[python_simple.py](../examples/python_simple.py)** - Simple graph building
+**[python_simple.py](https://github.com/tarekziade/rustnn/blob/main/examples/python_simple.py)** - Simple graph building
 - Basic operations: add, relu
 - Graph compilation and export
 - Good first example
 
-**[python_matmul.py](../examples/python_matmul.py)** - Matrix multiplication
+**[python_matmul.py](https://github.com/tarekziade/rustnn/blob/main/examples/python_matmul.py)** - Matrix multiplication
 - Demonstrates matmul operation
 - Shows shape inference and broadcasting
 
