@@ -323,24 +323,37 @@ examples/
      - Edge cases and validation
    - Run: `python -m pytest tests/test_python_api.py -v`
 
-6. **Documentation** (`docs/api-reference.md`):
+6. **WPT Conformance Tests** (`tests/wpt_data/conformance/<operation>.json`):
+   - **IMPORTANT**: Add WPT test data for spec compliance validation
+   - Reference: [WPT WebNN Tests](https://github.com/web-platform-tests/wpt/tree/master/webnn/conformance_tests)
+   - Find the operation's test file in WPT repo (e.g., `relu.https.any.js`)
+   - Extract 3-5 test cases covering:
+     - Different tensor shapes (1D, 2D, 3D, 4D)
+     - Different data types (float32 primarily)
+     - Edge cases and boundary conditions
+   - Create JSON file following format in existing test files
+   - Include proper tolerance specifications (ULP or ATOL)
+   - Verify tests: `pytest tests/test_wpt_conformance.py -k "<operation>" -v`
+   - See: `docs/wpt-test-guide.md` for detailed instructions
+
+7. **Documentation** (`docs/api-reference.md`):
    - Add operation to appropriate section
    - Include parameters, shape inference, formula
    - Add 2-3 practical examples
    - Show common use cases
 
-7. **Update TODO.txt**:
+8. **Update TODO.txt**:
    - Mark operation as done with implementation summary
 
-8. **Rebuild Python module**:
+9. **Rebuild Python module**:
    ```bash
    maturin develop --features python
    ```
 
-9. **Run all tests before committing**:
+10. **Run all tests before committing**:
    ```bash
    cargo test --lib        # Rust tests
-   pytest tests/ -v        # Python tests
+   pytest tests/ -v        # Python + WPT tests
    cargo fmt              # Format code
    ```
 

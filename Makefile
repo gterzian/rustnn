@@ -91,16 +91,29 @@ python-build:
 
 python-test: python-dev
 	@echo "Running Python tests (includes WPT conformance tests)..."
-	DYLD_LIBRARY_PATH=$(ORT_LIB_DIR) python -m pytest tests/ -v
+	@if [ -f .venv-webnn/bin/python ]; then \
+		DYLD_LIBRARY_PATH=$(ORT_LIB_DIR) .venv-webnn/bin/python -m pytest tests/ -v; \
+	else \
+		DYLD_LIBRARY_PATH=$(ORT_LIB_DIR) python -m pytest tests/ -v; \
+	fi
 
 python-test-wpt: python-dev
 	@echo "Running WPT conformance tests only..."
-	DYLD_LIBRARY_PATH=$(ORT_LIB_DIR) python -m pytest tests/test_wpt_conformance.py -v
+	@if [ -f .venv-webnn/bin/python ]; then \
+		DYLD_LIBRARY_PATH=$(ORT_LIB_DIR) .venv-webnn/bin/python -m pytest tests/test_wpt_conformance.py -v; \
+	else \
+		DYLD_LIBRARY_PATH=$(ORT_LIB_DIR) python -m pytest tests/test_wpt_conformance.py -v; \
+	fi
 
 python-example: python-dev
 	@echo "Running Python examples..."
-	python examples/python_simple.py
-	python examples/python_matmul.py
+	@if [ -f .venv-webnn/bin/python ]; then \
+		.venv-webnn/bin/python examples/python_simple.py; \
+		.venv-webnn/bin/python examples/python_matmul.py; \
+	else \
+		python examples/python_simple.py; \
+		python examples/python_matmul.py; \
+	fi
 
 python-clean:
 	@echo "Cleaning Python artifacts..."
