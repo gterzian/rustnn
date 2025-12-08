@@ -107,8 +107,9 @@ def build_simple_classifier(builder, num_classes=1000):
     conv1 = builder.conv2d(
         input_tensor,
         conv1_weights,
-        padding=[1, 1, 1, 1],
-        strides=[2, 2]
+        [2, 2],  # strides
+        None,    # dilations
+        [1, 1, 1, 1],  # pads
     )
     # Use clamp for ReLU6 activation (commonly used in MobileNet)
     conv1 = builder.clamp(conv1, min_value=0.0, max_value=6.0)
@@ -122,8 +123,10 @@ def build_simple_classifier(builder, num_classes=1000):
     dw_conv = builder.conv2d(
         conv1,
         dw_weights,
-        padding=[1, 1, 1, 1],
-        groups=32
+        None,    # strides
+        None,    # dilations
+        [1, 1, 1, 1],  # pads
+        32,      # groups (depthwise convolution)
     )
     # ReLU6 activation
     dw_conv = builder.clamp(dw_conv, min_value=0.0, max_value=6.0)
@@ -134,7 +137,7 @@ def build_simple_classifier(builder, num_classes=1000):
         [64, 32, 1, 1],
         "float32"
     )
-    pw_conv = builder.conv2d(dw_conv, pw_weights)
+    pw_conv = builder.conv2d(dw_conv, pw_weights, None, None, None, None)
     # ReLU6 activation
     pw_conv = builder.clamp(pw_conv, min_value=0.0, max_value=6.0)
 
@@ -214,8 +217,8 @@ def main():
     # Create WebNN context
     print("2. Creating WebNN context...")
     ml = webnn.ML()
-    context = ml.create_context(device_type="cpu")
-    print(f"   ✓ Context created (device: cpu)")
+    context = ml.create_context(power_preference="default", accelerated=False)
+    print(f"   ✓ Context created (accelerated={context.accelerated}, power={context.power_preference})")
     print()
 
     # Build graph

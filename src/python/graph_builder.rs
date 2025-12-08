@@ -1679,7 +1679,7 @@ impl PyMLGraphBuilder {
 
         let output_descriptor = OperandDescriptor {
             data_type: x.descriptor.data_type,
-            shape: new_shape,
+            shape: new_shape.clone(),
             pending_permutation: Vec::new(),
         };
 
@@ -1690,7 +1690,9 @@ impl PyMLGraphBuilder {
             op_type: "reshape".to_string(),
             input_operands: vec![x.id],
             output_operand: output_id,
-            attributes: serde_json::json!({}),
+            attributes: serde_json::json!({
+                "newShape": new_shape
+            }),
             label: None,
         };
 

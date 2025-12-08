@@ -36,6 +36,9 @@ impl OnnxConverter {
         if op_type.eq_ignore_ascii_case("matmul") {
             return "MatMul".to_string();
         }
+        if op_type.eq_ignore_ascii_case("conv2d") {
+            return "Conv".to_string();
+        }
         if op_type.eq_ignore_ascii_case("convTranspose2d") {
             return "ConvTranspose".to_string();
         }
@@ -168,6 +171,7 @@ impl OnnxConverter {
             if !strides_i64.is_empty() {
                 attributes.push(AttributeProto {
                     name: Some("strides".to_string()),
+                    r#type: Some(AttributeType::Ints as i32),
                     ints: strides_i64,
                     ..Default::default()
                 });
@@ -182,6 +186,7 @@ impl OnnxConverter {
             if !dilations_i64.is_empty() {
                 attributes.push(AttributeProto {
                     name: Some("dilations".to_string()),
+                    r#type: Some(AttributeType::Ints as i32),
                     ints: dilations_i64,
                     ..Default::default()
                 });
@@ -196,6 +201,7 @@ impl OnnxConverter {
             if !pads_i64.is_empty() {
                 attributes.push(AttributeProto {
                     name: Some("pads".to_string()),
+                    r#type: Some(AttributeType::Ints as i32),
                     ints: pads_i64,
                     ..Default::default()
                 });
@@ -205,6 +211,7 @@ impl OnnxConverter {
         if let Some(groups) = op.attributes.get("groups").and_then(|v| v.as_u64()) {
             attributes.push(AttributeProto {
                 name: Some("group".to_string()), // Note: ONNX uses "group" not "groups"
+                r#type: Some(AttributeType::Int as i32),
                 i: Some(groups as i64),
                 ..Default::default()
             });
@@ -226,6 +233,7 @@ impl OnnxConverter {
             if !strides_i64.is_empty() {
                 attributes.push(AttributeProto {
                     name: Some("strides".to_string()),
+                    r#type: Some(AttributeType::Ints as i32),
                     ints: strides_i64,
                     ..Default::default()
                 });
@@ -240,6 +248,7 @@ impl OnnxConverter {
             if !dilations_i64.is_empty() {
                 attributes.push(AttributeProto {
                     name: Some("dilations".to_string()),
+                    r#type: Some(AttributeType::Ints as i32),
                     ints: dilations_i64,
                     ..Default::default()
                 });
@@ -254,6 +263,7 @@ impl OnnxConverter {
             if !pads_i64.is_empty() {
                 attributes.push(AttributeProto {
                     name: Some("pads".to_string()),
+                    r#type: Some(AttributeType::Ints as i32),
                     ints: pads_i64,
                     ..Default::default()
                 });
@@ -273,6 +283,7 @@ impl OnnxConverter {
             if !output_padding_i64.is_empty() {
                 attributes.push(AttributeProto {
                     name: Some("output_padding".to_string()),
+                    r#type: Some(AttributeType::Ints as i32),
                     ints: output_padding_i64,
                     ..Default::default()
                 });
@@ -288,6 +299,7 @@ impl OnnxConverter {
             if !output_shape_i64.is_empty() {
                 attributes.push(AttributeProto {
                     name: Some("output_shape".to_string()),
+                    r#type: Some(AttributeType::Ints as i32),
                     ints: output_shape_i64,
                     ..Default::default()
                 });
@@ -297,6 +309,7 @@ impl OnnxConverter {
         if let Some(groups) = op.attributes.get("groups").and_then(|v| v.as_u64()) {
             attributes.push(AttributeProto {
                 name: Some("group".to_string()), // Note: ONNX uses "group" not "groups"
+                r#type: Some(AttributeType::Int as i32),
                 i: Some(groups as i64),
                 ..Default::default()
             });
@@ -322,6 +335,7 @@ impl OnnxConverter {
             if !kernel_shape.is_empty() {
                 attributes.push(AttributeProto {
                     name: Some("kernel_shape".to_string()),
+                    r#type: Some(AttributeType::Ints as i32),
                     ints: kernel_shape,
                     ..Default::default()
                 });
@@ -336,6 +350,7 @@ impl OnnxConverter {
             if !strides_i64.is_empty() {
                 attributes.push(AttributeProto {
                     name: Some("strides".to_string()),
+                    r#type: Some(AttributeType::Ints as i32),
                     ints: strides_i64,
                     ..Default::default()
                 });
@@ -350,6 +365,7 @@ impl OnnxConverter {
             if !dilations_i64.is_empty() {
                 attributes.push(AttributeProto {
                     name: Some("dilations".to_string()),
+                    r#type: Some(AttributeType::Ints as i32),
                     ints: dilations_i64,
                     ..Default::default()
                 });
@@ -364,6 +380,7 @@ impl OnnxConverter {
             if !pads_i64.is_empty() {
                 attributes.push(AttributeProto {
                     name: Some("pads".to_string()),
+                    r#type: Some(AttributeType::Ints as i32),
                     ints: pads_i64,
                     ..Default::default()
                 });
@@ -386,6 +403,7 @@ impl OnnxConverter {
             if !axes_i64.is_empty() {
                 attributes.push(AttributeProto {
                     name: Some("axes".to_string()),
+                    r#type: Some(AttributeType::Ints as i32),
                     ints: axes_i64,
                     ..Default::default()
                 });
@@ -399,6 +417,7 @@ impl OnnxConverter {
         {
             attributes.push(AttributeProto {
                 name: Some("keepdims".to_string()),
+                r#type: Some(AttributeType::Int as i32),
                 i: Some(if keep_dims { 1 } else { 0 }),
                 ..Default::default()
             });
@@ -440,6 +459,7 @@ impl OnnxConverter {
             if !axes_i64.is_empty() {
                 attributes.push(AttributeProto {
                     name: Some("axes".to_string()),
+                    r#type: Some(AttributeType::Ints as i32),
                     ints: axes_i64,
                     ..Default::default()
                 });
@@ -456,6 +476,7 @@ impl OnnxConverter {
         if let Some(axis) = op.attributes.get("axis").and_then(|v| v.as_u64()) {
             attributes.push(AttributeProto {
                 name: Some("axis".to_string()),
+                r#type: Some(AttributeType::Int as i32),
                 i: Some(axis as i64),
                 ..Default::default()
             });
@@ -468,6 +489,7 @@ impl OnnxConverter {
         {
             attributes.push(AttributeProto {
                 name: Some("keepdims".to_string()), // ONNX uses "keepdims" not "keepDimensions"
+                r#type: Some(AttributeType::Int as i32),
                 i: Some(if keep_dims { 1 } else { 0 }),
                 ..Default::default()
             });
@@ -497,6 +519,7 @@ impl OnnxConverter {
 
             attributes.push(AttributeProto {
                 name: Some("to".to_string()),
+                r#type: Some(AttributeType::Int as i32),
                 i: Some(type_code),
                 ..Default::default()
             });
@@ -512,6 +535,7 @@ impl OnnxConverter {
         if let Some(axis) = op.attributes.get("axis").and_then(|v| v.as_i64()) {
             attributes.push(AttributeProto {
                 name: Some("axis".to_string()),
+                r#type: Some(AttributeType::Int as i32),
                 i: Some(axis),
                 ..Default::default()
             });
@@ -534,6 +558,7 @@ impl OnnxConverter {
         if let Some(upper) = op.attributes.get("upper").and_then(|v| v.as_bool()) {
             attributes.push(AttributeProto {
                 name: Some("upper".to_string()),
+                r#type: Some(AttributeType::Int as i32),
                 i: Some(if upper { 1 } else { 0 }),
                 ..Default::default()
             });
@@ -542,6 +567,7 @@ impl OnnxConverter {
         if let Some(diagonal) = op.attributes.get("diagonal").and_then(|v| v.as_i64()) {
             attributes.push(AttributeProto {
                 name: Some("k".to_string()), // ONNX uses "k" for diagonal offset
+                r#type: Some(AttributeType::Int as i32),
                 i: Some(diagonal),
                 ..Default::default()
             });
@@ -927,6 +953,42 @@ impl crate::converters::GraphConverter for OnnxConverter {
                     name: Some(op_name),
                     op_type: Some(Self::onnx_op_type(&op.op_type)),
                     attribute: vec![], // No attributes for Clip in opset 11+
+                    ..Default::default()
+                });
+            } else if op.op_type == "reshape" {
+                // Reshape requires shape as a second input tensor in ONNX (not as an attribute)
+                let mut inputs: Vec<String> = op
+                    .input_operands
+                    .iter()
+                    .map(|id| Self::operand_name(graph, *id))
+                    .collect();
+
+                // Extract the new shape from attributes
+                if let Some(new_shape) = op.attributes.get("newShape").and_then(|v| v.as_array()) {
+                    let shape_values: Vec<i64> = new_shape
+                        .iter()
+                        .filter_map(|v| v.as_u64().map(|u| u as i64))
+                        .collect();
+
+                    let shape_name = format!("{}_shape", op_name);
+                    inputs.push(shape_name.clone());
+
+                    // Add shape as an initializer (constant tensor)
+                    initializers.push(TensorProto {
+                        name: Some(shape_name),
+                        data_type: Some(ProtoDataType::Int64 as i32),
+                        dims: vec![shape_values.len() as i64], // 1D tensor
+                        int64_data: shape_values,
+                        ..Default::default()
+                    });
+                }
+
+                nodes.push(NodeProto {
+                    input: inputs,
+                    output: vec![Self::operand_name(graph, op.output_operand)],
+                    name: Some(op_name),
+                    op_type: Some(Self::onnx_op_type(&op.op_type)),
+                    attribute: vec![], // No attributes for Reshape
                     ..Default::default()
                 });
             } else {
