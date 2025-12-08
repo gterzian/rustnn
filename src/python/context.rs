@@ -173,7 +173,7 @@ impl PyMLContext {
     ///     output_path: Path to save the CoreML model
     #[cfg(target_os = "macos")]
     fn convert_to_coreml(&self, graph: &PyMLGraph, output_path: &str) -> PyResult<()> {
-        let converter = crate::converters::CoremlConverter;
+        let converter = crate::converters::CoremlMlProgramConverter::default();
         let converted = converter.convert(&graph.graph_info).map_err(|e| {
             pyo3::exceptions::PyRuntimeError::new_err(format!("CoreML conversion failed: {}", e))
         })?;
