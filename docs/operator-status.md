@@ -145,18 +145,23 @@ This document tracks the implementation status of all WebNN operators across dif
 ## Summary Statistics
 
 ```
-Total WebNN Operations: 60
-Shape Inference:        60/60 (100%)
-Python API:             60/60 (100%)
-ONNX Backend:           60/60 (100%)
-CoreML MLProgram:       60/60 (100%) ✅
+WebNN Spec (CR Draft Dec 2025): ~95 total operations
+Core Operations Implemented:     60/60 (100%) ✅
+Deferred Operations:              4 (RNN: lstm, lstmCell, gru, gruCell)
+Remaining Operations:             ~31 (tensor manipulation, advanced activations)
+
+Implementation Status:
+Shape Inference:                  60/60 (100%)
+Python API:                       60/60 (100%)
+ONNX Backend:                     60/60 (100%)
+CoreML MLProgram:                 60/60 (100%) ✅
 ```
 
-**🎉 ALL OPERATIONS FULLY IMPLEMENTED! 🎉**
+**🎉 CORE OPERATIONS FULLY IMPLEMENTED! 🎉**
 
-### Implementation Complete
+### Implementation Status
 
-All 60 WebNN operations are now fully implemented across all backends:
+All 60 core WebNN operations are now fully implemented across all backends:
 - ✅ **Shape Inference**: Complete type and shape validation for all operations
 - ✅ **Python API**: W3C WebNN spec-compliant Python bindings
 - ✅ **ONNX Backend**: Cross-platform execution with full parameter support
@@ -167,6 +172,54 @@ All 60 WebNN operations are now fully implemented across all backends:
   - Convolution operations: `conv2d`, `conv_transpose2d`
   - Pooling operations: `average_pool2d`, `max_pool2d`
   - Normalization operations: `batch_normalization`, `instance_normalization`, `layer_normalization`
+
+---
+
+## Deferred Operations
+
+The following operations are defined in the WebNN specification but are **intentionally deferred** for later implementation:
+
+### Recurrent Neural Networks (4 operations)
+
+| Operation | Status | Rationale |
+|-----------|--------|-----------|
+| `lstm` | ⏭️ Deferred | Complex composite operation; spec under review; Transformers more common |
+| `lstmCell` | ⏭️ Deferred | Complex composite operation; lower priority than simpler ops |
+| `gru` | ⏭️ Deferred | Complex composite operation; spec under review; Transformers more common |
+| `gruCell` | ⏭️ Deferred | Complex composite operation; lower priority than simpler ops |
+
+**Deferral Rationale:**
+- **Complexity**: Each operation requires 10-15 parameters with complex shape inference (~2000-3000 LOC total)
+- **Spec Evolution**: Active [W3C discussion](https://github.com/webmachinelearning/webnn/issues/453) about removing these in favor of lower-level primitives
+- **Modern ML Trends**: LSTM/GRU largely obsoleted by Transformer architectures
+- **Priority**: Simpler, more widely-used operations (concat, gather, slice, pad) should be implemented first
+- **Test Coverage**: WPT tests exist but can be added when/if implementation is prioritized
+
+### Priority Operations for Next Implementation
+
+Based on modern ML architecture requirements, the following operations should be prioritized:
+
+**High Priority (Transformers, CNNs):**
+- `concat` - Concatenate tensors along axis
+- `gather` - Gather elements from tensor
+- `slice` - Extract sub-tensors
+- `split` - Split tensor into parts
+- `transpose` - Permute dimensions
+- `expand` - Broadcast to shape
+- `where` - Conditional selection
+- `pad` - Add padding
+
+**Medium Priority (Advanced architectures):**
+- `gelu` - GELU activation (Transformers)
+- `layerNorm` parameters - Complete parameter support
+- `softmax` parameters - Add axis parameter
+- `squeeze` / `unsqueeze` - Dimension manipulation
+
+**Lower Priority (Specialized):**
+- `scatter` - Scatter updates
+- `tile` - Repeat tensor
+- `prelu`, `elu`, `leakyRelu` - Additional activations
+- `hardSigmoid`, `hardSwish`, `softplus`, `softsign` - Specialized activations
 
 ---
 

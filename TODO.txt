@@ -80,9 +80,17 @@
     - prelu, elu, leakyRelu, hardSigmoid, hardSwish, gelu
     - softplus, softsign
 
-[ ] Recurrent operations
+[ ] Recurrent operations (DEFERRED - See rationale below)
     - gru, gruCell
     - lstm, lstmCell
+
+    **Deferral Rationale (2025-12-08):**
+    - These are complex composite operations (10-15 parameters each, ~2000-3000 LOC)
+    - WebNN spec debate about removing them in favor of lower-level primitives
+    - LSTM/GRU largely obsoleted by Transformers in modern ML
+    - WPT tests exist but implementation priority is low
+    - Focus on simpler, more widely-used operations first (concat, gather, slice, pad, etc.)
+    - Can revisit if/when spec stabilizes and user demand exists
 
 [x] Quantization operations (2025-12-08)
     - dequantizeLinear: Converts quantized integers to float32
