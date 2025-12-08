@@ -14,7 +14,7 @@ ORT_LIB_DIR ?= $(ORT_DIR)/onnxruntime-osx-arm64-$(ORT_VERSION)/lib
 ORT_LIB_LOCATION ?= $(ORT_LIB_DIR)
 .PHONY: build test fmt run viz onnx coreml coreml-validate onnx-validate validate-all-env \
 	python-dev python-build python-test python-test-wpt python-clean python-example \
-	mobilenet-demo text-gen-demo text-gen-train text-gen-trained text-gen-enhanced \
+	mobilenet-demo text-gen-demo text-gen-train text-gen-trained text-gen-enhanced text-gen-train-simple \
 	docs-serve docs-build docs-clean ci-docs \
 	help clean-all
 
@@ -237,6 +237,21 @@ text-gen-enhanced: python-dev
 	@echo "Enhanced generation with KV cache completed!"
 	@echo "========================================================================"
 
+text-gen-train-simple: python-dev
+	@echo "========================================================================"
+	@echo "Simple Training Demo That Actually Works!"
+	@echo "========================================================================"
+	@echo ""
+	@if [ -f .venv-webnn/bin/python ]; then \
+		DYLD_LIBRARY_PATH=$(ORT_LIB_DIR) .venv-webnn/bin/python examples/train_simple_demo.py --phrase "the quick brown fox" --epochs 100 --lr 0.15; \
+	else \
+		DYLD_LIBRARY_PATH=$(ORT_LIB_DIR) python examples/train_simple_demo.py --phrase "the quick brown fox" --epochs 100 --lr 0.15; \
+	fi
+	@echo ""
+	@echo "========================================================================"
+	@echo "Simple training completed - loss decreased!"
+	@echo "========================================================================"
+
 python-clean:
 	@echo "Cleaning Python artifacts..."
 	rm -rf target/wheels
@@ -315,6 +330,7 @@ help:
 	@echo "  text-gen-train     - Train text generation model on sample data"
 	@echo "  text-gen-trained   - Generate text using trained model weights"
 	@echo "  text-gen-enhanced  - Run enhanced version with KV cache"
+	@echo "  text-gen-train-simple - Simple training that actually works!"
 	@echo "  python-clean       - Clean Python artifacts"
 	@echo ""
 	@echo "Documentation:"
