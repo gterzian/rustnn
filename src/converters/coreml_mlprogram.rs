@@ -200,6 +200,121 @@ impl CoremlMlProgramConverter {
         }
     }
 
+    /// Create an Argument from an immediate integer array value
+    fn create_immediate_int_array(values: &[u32]) -> Argument {
+        use crate::protos::coreml::mil_spec::{
+            DataType as MilDataType, TensorType, TensorValue, Value, ValueType, dimension,
+            tensor_value, value, value_type,
+        };
+
+        let int_values: Vec<i64> = values.iter().map(|&v| v as i64).collect();
+
+        let tensor_value = TensorValue {
+            value: Some(tensor_value::Value::LongInts(
+                tensor_value::RepeatedLongInts { values: int_values },
+            )),
+        };
+
+        let value = Value {
+            doc_string: String::new(),
+            r#type: Some(ValueType {
+                r#type: Some(value_type::Type::TensorType(TensorType {
+                    data_type: MilDataType::Int64 as i32,
+                    rank: 1,
+                    dimensions: vec![Dimension {
+                        dimension: Some(dimension::Dimension::Constant(
+                            dimension::ConstantDimension {
+                                size: values.len() as u64,
+                            },
+                        )),
+                    }],
+                    attributes: HashMap::new(),
+                })),
+            }),
+            value: Some(value::Value::ImmediateValue(value::ImmediateValue {
+                value: Some(value::immediate_value::Value::Tensor(tensor_value)),
+            })),
+        };
+
+        Argument {
+            arguments: vec![crate::protos::coreml::mil_spec::argument::Binding {
+                binding: Some(Binding::Value(value)),
+            }],
+        }
+    }
+
+    /// Create an Argument from an immediate integer scalar value
+    fn create_immediate_int(value: u32) -> Argument {
+        use crate::protos::coreml::mil_spec::{
+            DataType as MilDataType, TensorType, TensorValue, Value, ValueType, tensor_value,
+            value, value_type,
+        };
+
+        let tensor_value = TensorValue {
+            value: Some(tensor_value::Value::LongInts(
+                tensor_value::RepeatedLongInts {
+                    values: vec![value as i64],
+                },
+            )),
+        };
+
+        let val = Value {
+            doc_string: String::new(),
+            r#type: Some(ValueType {
+                r#type: Some(value_type::Type::TensorType(TensorType {
+                    data_type: MilDataType::Int64 as i32,
+                    rank: 0, // Scalar
+                    dimensions: vec![],
+                    attributes: HashMap::new(),
+                })),
+            }),
+            value: Some(value::Value::ImmediateValue(value::ImmediateValue {
+                value: Some(value::immediate_value::Value::Tensor(tensor_value)),
+            })),
+        };
+
+        Argument {
+            arguments: vec![crate::protos::coreml::mil_spec::argument::Binding {
+                binding: Some(Binding::Value(val)),
+            }],
+        }
+    }
+
+    /// Create an Argument from an immediate float scalar value
+    fn create_immediate_float(value: f32) -> Argument {
+        use crate::protos::coreml::mil_spec::{
+            DataType as MilDataType, TensorType, TensorValue, Value, ValueType, tensor_value,
+            value, value_type,
+        };
+
+        let tensor_value = TensorValue {
+            value: Some(tensor_value::Value::Floats(tensor_value::RepeatedFloats {
+                values: vec![value],
+            })),
+        };
+
+        let val = Value {
+            doc_string: String::new(),
+            r#type: Some(ValueType {
+                r#type: Some(value_type::Type::TensorType(TensorType {
+                    data_type: MilDataType::Float32 as i32,
+                    rank: 0, // Scalar
+                    dimensions: vec![],
+                    attributes: HashMap::new(),
+                })),
+            }),
+            value: Some(value::Value::ImmediateValue(value::ImmediateValue {
+                value: Some(value::immediate_value::Value::Tensor(tensor_value)),
+            })),
+        };
+
+        Argument {
+            arguments: vec![crate::protos::coreml::mil_spec::argument::Binding {
+                binding: Some(Binding::Value(val)),
+            }],
+        }
+    }
+
     /// Map WebNN operation to MIL operation
     fn convert_operation(
         &self,
@@ -373,7 +488,239 @@ impl CoremlMlProgramConverter {
                 // TODO: Add shape parameter from attributes
             }
 
-            // TODO: Add more operation-specific input handling
+            // Convolution operations: input, filter + parameters
+            "conv2d" => {
+                if input_names.len() >= 2 {
+                    inputs.insert("x".to_string(), Self::create_argument(&input_names[0]));
+                    inputs.insert("weight".to_string(), Self::create_argument(&input_names[1]));
+                }
+
+                // Add optional bias if present (third input)
+                if input_names.len() >= 3 {
+                    inputs.insert("bias".to_string(), Self::create_argument(&input_names[2]));
+                }
+
+                // Add parameters from attributes
+                if let Some(strides) = op.attributes.get("strides").and_then(|v| v.as_array()) {
+                    let strides_u32: Vec<u32> = strides
+                        .iter()
+                        .filter_map(|v| v.as_u64().map(|u| u as u32))
+                        .collect();
+                    if !strides_u32.is_empty() {
+                        inputs.insert(
+                            "strides".to_string(),
+                            Self::create_immediate_int_array(&strides_u32),
+                        );
+                    }
+                }
+
+                if let Some(dilations) = op.attributes.get("dilations").and_then(|v| v.as_array()) {
+                    let dilations_u32: Vec<u32> = dilations
+                        .iter()
+                        .filter_map(|v| v.as_u64().map(|u| u as u32))
+                        .collect();
+                    if !dilations_u32.is_empty() {
+                        inputs.insert(
+                            "dilations".to_string(),
+                            Self::create_immediate_int_array(&dilations_u32),
+                        );
+                    }
+                }
+
+                if let Some(pads) = op.attributes.get("pads").and_then(|v| v.as_array()) {
+                    let pads_u32: Vec<u32> = pads
+                        .iter()
+                        .filter_map(|v| v.as_u64().map(|u| u as u32))
+                        .collect();
+                    if !pads_u32.is_empty() {
+                        inputs.insert(
+                            "pad".to_string(),
+                            Self::create_immediate_int_array(&pads_u32),
+                        );
+                    }
+                }
+
+                if let Some(groups) = op.attributes.get("groups").and_then(|v| v.as_u64()) {
+                    inputs.insert(
+                        "groups".to_string(),
+                        Self::create_immediate_int(groups as u32),
+                    );
+                }
+            }
+
+            // Transposed convolution: input, filter + parameters
+            "convtranspose2d" => {
+                if input_names.len() >= 2 {
+                    inputs.insert("x".to_string(), Self::create_argument(&input_names[0]));
+                    inputs.insert("weight".to_string(), Self::create_argument(&input_names[1]));
+                }
+
+                // Add optional bias if present (third input)
+                if input_names.len() >= 3 {
+                    inputs.insert("bias".to_string(), Self::create_argument(&input_names[2]));
+                }
+
+                // Add parameters from attributes
+                if let Some(strides) = op.attributes.get("strides").and_then(|v| v.as_array()) {
+                    let strides_u32: Vec<u32> = strides
+                        .iter()
+                        .filter_map(|v| v.as_u64().map(|u| u as u32))
+                        .collect();
+                    if !strides_u32.is_empty() {
+                        inputs.insert(
+                            "strides".to_string(),
+                            Self::create_immediate_int_array(&strides_u32),
+                        );
+                    }
+                }
+
+                if let Some(dilations) = op.attributes.get("dilations").and_then(|v| v.as_array()) {
+                    let dilations_u32: Vec<u32> = dilations
+                        .iter()
+                        .filter_map(|v| v.as_u64().map(|u| u as u32))
+                        .collect();
+                    if !dilations_u32.is_empty() {
+                        inputs.insert(
+                            "dilations".to_string(),
+                            Self::create_immediate_int_array(&dilations_u32),
+                        );
+                    }
+                }
+
+                if let Some(pads) = op.attributes.get("pads").and_then(|v| v.as_array()) {
+                    let pads_u32: Vec<u32> = pads
+                        .iter()
+                        .filter_map(|v| v.as_u64().map(|u| u as u32))
+                        .collect();
+                    if !pads_u32.is_empty() {
+                        inputs.insert(
+                            "pad".to_string(),
+                            Self::create_immediate_int_array(&pads_u32),
+                        );
+                    }
+                }
+
+                if let Some(output_padding) = op
+                    .attributes
+                    .get("outputPadding")
+                    .and_then(|v| v.as_array())
+                {
+                    let output_padding_u32: Vec<u32> = output_padding
+                        .iter()
+                        .filter_map(|v| v.as_u64().map(|u| u as u32))
+                        .collect();
+                    if !output_padding_u32.is_empty() {
+                        inputs.insert(
+                            "output_shape".to_string(),
+                            Self::create_immediate_int_array(&output_padding_u32),
+                        );
+                    }
+                }
+
+                if let Some(groups) = op.attributes.get("groups").and_then(|v| v.as_u64()) {
+                    inputs.insert(
+                        "groups".to_string(),
+                        Self::create_immediate_int(groups as u32),
+                    );
+                }
+            }
+
+            // Pooling operations: input + parameters
+            "averagepool2d" | "maxpool2d" => {
+                if !input_names.is_empty() {
+                    inputs.insert("x".to_string(), Self::create_argument(&input_names[0]));
+                }
+
+                // Add parameters from attributes
+                if let Some(window_dimensions) = op
+                    .attributes
+                    .get("windowDimensions")
+                    .and_then(|v| v.as_array())
+                {
+                    let window_dimensions_u32: Vec<u32> = window_dimensions
+                        .iter()
+                        .filter_map(|v| v.as_u64().map(|u| u as u32))
+                        .collect();
+                    if !window_dimensions_u32.is_empty() {
+                        inputs.insert(
+                            "kernel_sizes".to_string(),
+                            Self::create_immediate_int_array(&window_dimensions_u32),
+                        );
+                    }
+                }
+
+                if let Some(strides) = op.attributes.get("strides").and_then(|v| v.as_array()) {
+                    let strides_u32: Vec<u32> = strides
+                        .iter()
+                        .filter_map(|v| v.as_u64().map(|u| u as u32))
+                        .collect();
+                    if !strides_u32.is_empty() {
+                        inputs.insert(
+                            "strides".to_string(),
+                            Self::create_immediate_int_array(&strides_u32),
+                        );
+                    }
+                }
+
+                if let Some(dilations) = op.attributes.get("dilations").and_then(|v| v.as_array()) {
+                    let dilations_u32: Vec<u32> = dilations
+                        .iter()
+                        .filter_map(|v| v.as_u64().map(|u| u as u32))
+                        .collect();
+                    if !dilations_u32.is_empty() {
+                        inputs.insert(
+                            "dilations".to_string(),
+                            Self::create_immediate_int_array(&dilations_u32),
+                        );
+                    }
+                }
+
+                if let Some(pads) = op.attributes.get("pads").and_then(|v| v.as_array()) {
+                    let pads_u32: Vec<u32> = pads
+                        .iter()
+                        .filter_map(|v| v.as_u64().map(|u| u as u32))
+                        .collect();
+                    if !pads_u32.is_empty() {
+                        inputs.insert(
+                            "pad".to_string(),
+                            Self::create_immediate_int_array(&pads_u32),
+                        );
+                    }
+                }
+            }
+
+            // Normalization operations
+            "batchnormalization" | "instancenormalization" | "layernormalization" => {
+                // Add input operands (input, mean, variance, optional scale, optional bias)
+                if !input_names.is_empty() {
+                    inputs.insert("x".to_string(), Self::create_argument(&input_names[0]));
+                }
+                if input_names.len() >= 2 {
+                    inputs.insert("mean".to_string(), Self::create_argument(&input_names[1]));
+                }
+                if input_names.len() >= 3 {
+                    inputs.insert(
+                        "variance".to_string(),
+                        Self::create_argument(&input_names[2]),
+                    );
+                }
+                // Scale and bias are optional (4th and 5th inputs)
+                if input_names.len() >= 4 {
+                    inputs.insert("gamma".to_string(), Self::create_argument(&input_names[3]));
+                }
+                if input_names.len() >= 5 {
+                    inputs.insert("beta".to_string(), Self::create_argument(&input_names[4]));
+                }
+
+                // Add epsilon parameter
+                if let Some(epsilon) = op.attributes.get("epsilon").and_then(|v| v.as_f64()) {
+                    inputs.insert(
+                        "epsilon".to_string(),
+                        Self::create_immediate_float(epsilon as f32),
+                    );
+                }
+            }
+
             _ => {}
         }
 

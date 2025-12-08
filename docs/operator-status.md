@@ -92,15 +92,15 @@ This document tracks the implementation status of all WebNN operators across dif
 
 | Operation | Shape Inference | Python API | ONNX | CoreML MLProgram |
 |-----------|----------------|------------|------|------------------|
-| `conv2d` | ✅ | ✅ | ✅ | ⏸️ |
-| `conv_transpose2d` | ✅ | ✅ | ✅ | ⏸️ |
+| `conv2d` | ✅ | ✅ | ✅ | ✅ |
+| `conv_transpose2d` | ✅ | ✅ | ✅ | ✅ |
 
 ## Pooling
 
 | Operation | Shape Inference | Python API | ONNX | CoreML MLProgram |
 |-----------|----------------|------------|------|------------------|
-| `average_pool2d` | ✅ | ✅ | ✅ | ⏸️ |
-| `max_pool2d` | ✅ | ✅ | ✅ | ⏸️ |
+| `average_pool2d` | ✅ | ✅ | ✅ | ✅ |
+| `max_pool2d` | ✅ | ✅ | ✅ | ✅ |
 | `global_average_pool` | ✅ | ✅ | ✅ | ✅ |
 | `global_max_pool` | ✅ | ✅ | ✅ | ✅ |
 
@@ -108,9 +108,9 @@ This document tracks the implementation status of all WebNN operators across dif
 
 | Operation | Shape Inference | Python API | ONNX | CoreML MLProgram |
 |-----------|----------------|------------|------|------------------|
-| `batch_normalization` | ✅ | ✅ | ✅ | ⏸️ |
-| `instance_normalization` | ✅ | ✅ | ✅ | ⏸️ |
-| `layer_normalization` | ✅ | ✅ | ✅ | ⏸️ |
+| `batch_normalization` | ✅ | ✅ | ✅ | ✅ |
+| `instance_normalization` | ✅ | ✅ | ✅ | ✅ |
+| `layer_normalization` | ✅ | ✅ | ✅ | ✅ |
 
 ## Reduction
 
@@ -149,25 +149,24 @@ Total WebNN Operations: 60
 Shape Inference:        60/60 (100%)
 Python API:             60/60 (100%)
 ONNX Backend:           60/60 (100%)
-CoreML MLProgram:       57/60 (95%)
+CoreML MLProgram:       60/60 (100%) ✅
 ```
 
-**Remaining Work in CoreML MLProgram:** 3 operations
-- 0 missing completely (❌) - ALL OPERATIONS NOW MAPPED! ✅
-- 3 partially implemented (⏸️ - operation mapping exists but parameters not fully handled)
+**🎉 ALL OPERATIONS FULLY IMPLEMENTED! 🎉**
 
-### Breakdown by Status
+### Implementation Complete
 
-**✅ All Basic Operations Implemented (57):**
-All 60 WebNN operations now have MIL operation mappings in CoreML MLProgram!
+All 60 WebNN operations are now fully implemented across all backends:
+- ✅ **Shape Inference**: Complete type and shape validation for all operations
+- ✅ **Python API**: W3C WebNN spec-compliant Python bindings
+- ✅ **ONNX Backend**: Cross-platform execution with full parameter support
+- ✅ **CoreML MLProgram**: macOS GPU/Neural Engine execution with full parameter support
 
-**⏸️ Partially Implemented - Need Parameter Handling (3):**
-These operations are mapped but lack full parameter support (strides, padding, dilations, etc.):
-- `conv2d`, `conv_transpose2d` - need convolution parameter handling
-- `average_pool2d`, `max_pool2d` - need pooling parameter handling
-- `batch_normalization`, `instance_normalization`, `layer_normalization` - need normalization parameter handling
-
-**Note:** These partially implemented operations work for basic cases but need MIL Value immediate value creation for complete parameter support.
+**Recent Additions:**
+- Added full parameter support (strides, dilations, pads, groups, epsilon, etc.) for:
+  - Convolution operations: `conv2d`, `conv_transpose2d`
+  - Pooling operations: `average_pool2d`, `max_pool2d`
+  - Normalization operations: `batch_normalization`, `instance_normalization`, `layer_normalization`
 
 ---
 
