@@ -124,6 +124,16 @@ mod mil_ops {
 
     // Type conversion operations
     pub const CAST: &str = "cast";
+
+    // Scatter operations
+    pub const SCATTER_ELEMENTS: &str = "scatter";
+    pub const SCATTER_ND: &str = "scatter_nd";
+
+    // Tile operation
+    pub const TILE: &str = "tile";
+
+    // Triangular operation
+    pub const TRIANGULAR: &str = "band_part";
 }
 
 #[derive(Default)]
@@ -504,6 +514,16 @@ impl CoremlMlProgramConverter {
             "argmax" => mil_ops::ARG_MAX,
             "argmin" => mil_ops::ARG_MIN,
             "cast" => mil_ops::CAST,
+
+            // Scatter operations
+            "scatterelements" => mil_ops::SCATTER_ELEMENTS,
+            "scatternd" => mil_ops::SCATTER_ND,
+
+            // Tile operation
+            "tile" => mil_ops::TILE,
+
+            // Triangular operation
+            "triangular" => mil_ops::TRIANGULAR,
 
             _ => {
                 return Err(GraphError::ConversionFailed {
@@ -1082,6 +1102,103 @@ impl CoremlMlProgramConverter {
                     };
                     inputs.insert("dtype".to_string(), Self::create_immediate_int(dtype_code));
                 }
+            }
+
+            "scatterElements" => {
+                // scatter: data, indices, updates, axis
+                if input_names.len() >= 3 {
+                    inputs.insert("data".to_string(), Self::create_argument(&input_names[0]));
+                    inputs.insert(
+                        "indices".to_string(),
+                        Self::create_argument(&input_names[1]),
+                    );
+                    inputs.insert(
+                        "updates".to_string(),
+                        Self::create_argument(&input_names[2]),
+                    );
+                }
+
+                // Add axis parameter
+                if let Some(axis) = op.attributes.get("axis").and_then(|v| v.as_i64()) {
+                    inputs.insert("axis".to_string(), Self::create_immediate_int(axis as u32));
+                }
+            }
+
+            "scatterND" => {
+                // scatter_nd: data, indices, updates
+                if input_names.len() >= 3 {
+                    inputs.insert("data".to_string(), Self::create_argument(&input_names[0]));
+                    inputs.insert(
+                        "indices".to_string(),
+                        Self::create_argument(&input_names[1]),
+                    );
+                    inputs.insert(
+                        "updates".to_string(),
+                        Self::create_argument(&input_names[2]),
+                    );
+                }
+            }
+
+            "tile" => {
+                // tile: x, reps
+                if !input_names.is_empty() {
+                    inputs.insert("x".to_string(), Self::create_argument(&input_names[0]));
+                }
+
+                // Add repetitions parameter
+                if let Some(reps) = op.attributes.get("repetitions").and_then(|v| v.as_array()) {
+                    let reps_u32: Vec<u32> = reps
+                        .iter()
+                        .filter_map(|v| v.as_u64().map(|u| u as u32))
+                        .collect();
+                    if !reps_u32.is_empty() {
+                        inputs.insert(
+                            "reps".to_string(),
+                            Self::create_immediate_int_array(&reps_u32),
+                        );
+                    }
+                }
+            }
+
+            "triangular" => {
+                // band_part: x, lower, upper
+                if !input_names.is_empty() {
+                    inputs.insert("x".to_string(), Self::create_argument(&input_names[0]));
+                }
+
+                // CoreML band_part uses lower and upper bounds instead of upper/diagonal
+                // upper=true, diagonal=0 means: lower=-1 (all below diagonal), upper=0 (main diagonal and above)
+                // upper=false, diagonal=0 means: lower=0 (main diagonal and below), upper=-1 (all above diagonal)
+                let is_upper = op
+                    .attributes
+                    .get("upper")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(true);
+                let diagonal = op
+                    .attributes
+                    .get("diagonal")
+                    .and_then(|v| v.as_i64())
+                    .unwrap_or(0);
+
+                // Convert WebNN (upper, diagonal) to CoreML (lower, upper)
+                // For upper triangle: keep diagonal and above
+                // For lower triangle: keep diagonal and below
+                let (lower_bound, upper_bound) = if is_upper {
+                    // Upper triangle: remove elements below diagonal+k
+                    (diagonal as i32, -1) // keep from diagonal+k upward
+                } else {
+                    // Lower triangle: remove elements above diagonal+k
+                    (-1, diagonal as i32) // keep from diagonal+k downward
+                };
+
+                inputs.insert(
+                    "lower".to_string(),
+                    Self::create_immediate_int(lower_bound as u32),
+                );
+                inputs.insert(
+                    "upper".to_string(),
+                    Self::create_immediate_int(upper_bound as u32),
+                );
             }
 
             _ => {}

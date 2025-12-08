@@ -126,6 +126,10 @@ impl OnnxConverter {
         if op_type.eq_ignore_ascii_case("quantizeLinear") {
             return "QuantizeLinear".to_string();
         }
+        // Tensor operations
+        if op_type.eq_ignore_ascii_case("triangular") {
+            return "Trilu".to_string(); // ONNX Trilu (triangle lower/upper)
+        }
 
         // Default: capitalize first letter
         let mut chars = op_type.chars();
@@ -488,6 +492,51 @@ impl OnnxConverter {
         attributes
     }
 
+    /// Create ONNX attributes for scatterElements operation
+    fn create_scatter_elements_attributes(op: &Operation) -> Vec<AttributeProto> {
+        let mut attributes = Vec::new();
+
+        if let Some(axis) = op.attributes.get("axis").and_then(|v| v.as_i64()) {
+            attributes.push(AttributeProto {
+                name: Some("axis".to_string()),
+                i: Some(axis),
+                ..Default::default()
+            });
+        }
+
+        attributes
+    }
+
+    /// Create ONNX attributes for tile operation
+    fn create_tile_attributes(_op: &Operation) -> Vec<AttributeProto> {
+        // For Tile operation, repetitions is provided as a separate input tensor in ONNX
+        // Not as an attribute, so we return empty attributes
+        Vec::new()
+    }
+
+    /// Create ONNX attributes for triangular operation
+    fn create_triangular_attributes(op: &Operation) -> Vec<AttributeProto> {
+        let mut attributes = Vec::new();
+
+        if let Some(upper) = op.attributes.get("upper").and_then(|v| v.as_bool()) {
+            attributes.push(AttributeProto {
+                name: Some("upper".to_string()),
+                i: Some(if upper { 1 } else { 0 }),
+                ..Default::default()
+            });
+        }
+
+        if let Some(diagonal) = op.attributes.get("diagonal").and_then(|v| v.as_i64()) {
+            attributes.push(AttributeProto {
+                name: Some("k".to_string()), // ONNX uses "k" for diagonal offset
+                i: Some(diagonal),
+                ..Default::default()
+            });
+        }
+
+        attributes
+    }
+
     fn create_operation_attributes(op: &Operation) -> Vec<AttributeProto> {
         if op.op_type == "conv2d" {
             Self::create_conv2d_attributes(op)
@@ -503,6 +552,12 @@ impl OnnxConverter {
             Self::create_arg_reduce_attributes(op)
         } else if op.op_type == "cast" {
             Self::create_cast_attributes(op)
+        } else if op.op_type == "scatterElements" {
+            Self::create_scatter_elements_attributes(op)
+        } else if op.op_type == "tile" {
+            Self::create_tile_attributes(op)
+        } else if op.op_type == "triangular" {
+            Self::create_triangular_attributes(op)
         } else {
             Vec::new()
         }

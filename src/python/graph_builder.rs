@@ -2755,6 +2755,242 @@ impl PyMLGraphBuilder {
 
         Ok(PyMLGraph::new(graph_info))
     }
+
+    /// Scatter elements operation
+    ///
+    /// Updates values in input tensor at indices specified by indices tensor.
+    ///
+    /// Args:
+    ///     input: The base tensor to scatter values into
+    ///     indices: Integer tensor of same rank as input, containing indices
+    ///     updates: Tensor of same rank as input, containing values to scatter
+    ///     axis: Axis along which to scatter (can be negative)
+    ///
+    /// Returns:
+    ///     MLOperand: Output operand with scattered values
+    fn scatter_elements(
+        &mut self,
+        input: &PyMLOperand,
+        indices: &PyMLOperand,
+        updates: &PyMLOperand,
+        axis: i32,
+    ) -> PyResult<PyMLOperand> {
+        use crate::shape_inference::infer_scatter_elements_shape;
+
+        let output_shape = infer_scatter_elements_shape(
+            &input.descriptor.shape,
+            &indices.descriptor.shape,
+            &updates.descriptor.shape,
+            axis,
+        )
+        .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+
+        let output_descriptor = OperandDescriptor {
+            data_type: input.descriptor.data_type,
+            shape: output_shape,
+            pending_permutation: Vec::new(),
+        };
+
+        let output_id = self.next_operand_id;
+        self.next_operand_id += 1;
+
+        let attributes = serde_json::json!({
+            "axis": axis,
+        });
+
+        let operation = Operation {
+            op_type: "scatterElements".to_string(),
+            input_operands: vec![input.id, indices.id, updates.id],
+            output_operand: output_id,
+            attributes,
+            label: None,
+        };
+
+        self.operations.push(operation);
+
+        let output_operand = Operand {
+            descriptor: output_descriptor.clone(),
+            kind: OperandKind::Output,
+            name: None,
+        };
+        self.operands.push(output_operand);
+
+        let py_operand = PyMLOperand::new(output_id, output_descriptor, OperandKind::Output, None);
+        self.operand_map.insert(output_id, py_operand.clone());
+
+        Ok(py_operand)
+    }
+
+    /// ScatterND operation
+    ///
+    /// Scatter updates into a tensor using multi-dimensional indices.
+    ///
+    /// Args:
+    ///     input: Base tensor of rank r >= 1
+    ///     indices: Integer tensor of rank q >= 1
+    ///     updates: Tensor containing values to scatter
+    ///
+    /// Returns:
+    ///     MLOperand: Output operand with scattered values
+    fn scatter_nd(
+        &mut self,
+        input: &PyMLOperand,
+        indices: &PyMLOperand,
+        updates: &PyMLOperand,
+    ) -> PyResult<PyMLOperand> {
+        use crate::shape_inference::infer_scatter_nd_shape;
+
+        let output_shape = infer_scatter_nd_shape(
+            &input.descriptor.shape,
+            &indices.descriptor.shape,
+            &updates.descriptor.shape,
+        )
+        .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+
+        let output_descriptor = OperandDescriptor {
+            data_type: input.descriptor.data_type,
+            shape: output_shape,
+            pending_permutation: Vec::new(),
+        };
+
+        let output_id = self.next_operand_id;
+        self.next_operand_id += 1;
+
+        let attributes = serde_json::json!({});
+
+        let operation = Operation {
+            op_type: "scatterND".to_string(),
+            input_operands: vec![input.id, indices.id, updates.id],
+            output_operand: output_id,
+            attributes,
+            label: None,
+        };
+
+        self.operations.push(operation);
+
+        let output_operand = Operand {
+            descriptor: output_descriptor.clone(),
+            kind: OperandKind::Output,
+            name: None,
+        };
+        self.operands.push(output_operand);
+
+        let py_operand = PyMLOperand::new(output_id, output_descriptor, OperandKind::Output, None);
+        self.operand_map.insert(output_id, py_operand.clone());
+
+        Ok(py_operand)
+    }
+
+    /// Tile operation
+    ///
+    /// Repeats tensor along each dimension according to repetitions.
+    ///
+    /// Args:
+    ///     input: Input tensor to tile
+    ///     repetitions: Number of repetitions for each dimension
+    ///
+    /// Returns:
+    ///     MLOperand: Output operand with tiled values
+    fn tile(&mut self, input: &PyMLOperand, repetitions: Vec<u32>) -> PyResult<PyMLOperand> {
+        use crate::shape_inference::infer_tile_shape;
+
+        let output_shape = infer_tile_shape(&input.descriptor.shape, &repetitions)
+            .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+
+        let output_descriptor = OperandDescriptor {
+            data_type: input.descriptor.data_type,
+            shape: output_shape,
+            pending_permutation: Vec::new(),
+        };
+
+        let output_id = self.next_operand_id;
+        self.next_operand_id += 1;
+
+        let attributes = serde_json::json!({
+            "repetitions": repetitions,
+        });
+
+        let operation = Operation {
+            op_type: "tile".to_string(),
+            input_operands: vec![input.id],
+            output_operand: output_id,
+            attributes,
+            label: None,
+        };
+
+        self.operations.push(operation);
+
+        let output_operand = Operand {
+            descriptor: output_descriptor.clone(),
+            kind: OperandKind::Output,
+            name: None,
+        };
+        self.operands.push(output_operand);
+
+        let py_operand = PyMLOperand::new(output_id, output_descriptor, OperandKind::Output, None);
+        self.operand_map.insert(output_id, py_operand.clone());
+
+        Ok(py_operand)
+    }
+
+    /// Triangular operation
+    ///
+    /// Extract upper or lower triangular part of matrix (last 2 dimensions).
+    ///
+    /// Args:
+    ///     input: Input tensor (rank >= 2)
+    ///     upper: Extract upper triangle if true, lower if false
+    ///     diagonal: Diagonal offset (0=main, positive=above, negative=below)
+    ///
+    /// Returns:
+    ///     MLOperand: Output operand with non-triangular elements zeroed
+    fn triangular(
+        &mut self,
+        input: &PyMLOperand,
+        upper: bool,
+        diagonal: i32,
+    ) -> PyResult<PyMLOperand> {
+        use crate::shape_inference::infer_triangular_shape;
+
+        let output_shape = infer_triangular_shape(&input.descriptor.shape)
+            .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+
+        let output_descriptor = OperandDescriptor {
+            data_type: input.descriptor.data_type,
+            shape: output_shape,
+            pending_permutation: Vec::new(),
+        };
+
+        let output_id = self.next_operand_id;
+        self.next_operand_id += 1;
+
+        let attributes = serde_json::json!({
+            "upper": upper,
+            "diagonal": diagonal,
+        });
+
+        let operation = Operation {
+            op_type: "triangular".to_string(),
+            input_operands: vec![input.id],
+            output_operand: output_id,
+            attributes,
+            label: None,
+        };
+
+        self.operations.push(operation);
+
+        let output_operand = Operand {
+            descriptor: output_descriptor.clone(),
+            kind: OperandKind::Output,
+            name: None,
+        };
+        self.operands.push(output_operand);
+
+        let py_operand = PyMLOperand::new(output_id, output_descriptor, OperandKind::Output, None);
+        self.operand_map.insert(output_id, py_operand.clone());
+
+        Ok(py_operand)
+    }
 }
 
 impl PyMLGraphBuilder {

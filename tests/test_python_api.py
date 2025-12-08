@@ -2714,3 +2714,223 @@ def test_cast_preserves_shape(context):
     assert output.shape == [2, 3, 4, 5]
     assert output.data_type == "int32"
     graph = builder.build({"output": output})
+
+
+# ScatterElements tests
+def test_scatter_elements_1d(context):
+    """Test scatterElements on 1D tensor"""
+    builder = context.create_graph_builder()
+    data = builder.input("data", [4], "float32")
+    indices = builder.input("indices", [4], "int32")
+    updates = builder.input("updates", [4], "float32")
+    output = builder.scatter_elements(data, indices, updates, axis=0)
+    assert output.shape == [4]
+    assert output.data_type == "float32"
+    graph = builder.build({"output": output})
+
+
+def test_scatter_elements_2d_axis_0(context):
+    """Test scatterElements on 2D tensor along axis 0"""
+    builder = context.create_graph_builder()
+    data = builder.input("data", [3, 4], "float32")
+    indices = builder.input("indices", [2, 4], "int32")
+    updates = builder.input("updates", [2, 4], "float32")
+    output = builder.scatter_elements(data, indices, updates, axis=0)
+    assert output.shape == [3, 4]
+    assert output.data_type == "float32"
+    graph = builder.build({"output": output})
+
+
+def test_scatter_elements_2d_axis_1(context):
+    """Test scatterElements on 2D tensor along axis 1"""
+    builder = context.create_graph_builder()
+    data = builder.input("data", [3, 4], "float32")
+    indices = builder.input("indices", [3, 2], "int32")
+    updates = builder.input("updates", [3, 2], "float32")
+    output = builder.scatter_elements(data, indices, updates, axis=1)
+    assert output.shape == [3, 4]
+    assert output.data_type == "float32"
+    graph = builder.build({"output": output})
+
+
+def test_scatter_elements_negative_axis(context):
+    """Test scatterElements with negative axis"""
+    builder = context.create_graph_builder()
+    data = builder.input("data", [3, 4], "float32")
+    indices = builder.input("indices", [3, 2], "int32")
+    updates = builder.input("updates", [3, 2], "float32")
+    output = builder.scatter_elements(data, indices, updates, axis=-1)
+    assert output.shape == [3, 4]
+    assert output.data_type == "float32"
+    graph = builder.build({"output": output})
+
+
+def test_scatter_elements_3d(context):
+    """Test scatterElements on 3D tensor"""
+    builder = context.create_graph_builder()
+    data = builder.input("data", [2, 3, 4], "float32")
+    indices = builder.input("indices", [2, 2, 4], "int32")
+    updates = builder.input("updates", [2, 2, 4], "float32")
+    output = builder.scatter_elements(data, indices, updates, axis=1)
+    assert output.shape == [2, 3, 4]
+    graph = builder.build({"output": output})
+
+
+# ScatterND tests
+def test_scatter_nd_basic(context):
+    """Test scatterND with basic 2D case"""
+    builder = context.create_graph_builder()
+    data = builder.input("data", [4, 5], "float32")
+    indices = builder.input("indices", [3, 1], "int32")  # k=1
+    updates = builder.input("updates", [3, 5], "float32")  # [3] + [5]
+    output = builder.scatter_nd(data, indices, updates)
+    assert output.shape == [4, 5]
+    assert output.data_type == "float32"
+    graph = builder.build({"output": output})
+
+
+def test_scatter_nd_3d(context):
+    """Test scatterND on 3D tensor"""
+    builder = context.create_graph_builder()
+    data = builder.input("data", [2, 3, 4], "float32")
+    indices = builder.input("indices", [5, 2], "int32")  # k=2
+    updates = builder.input("updates", [5, 4], "float32")  # [5] + [4]
+    output = builder.scatter_nd(data, indices, updates)
+    assert output.shape == [2, 3, 4]
+    assert output.data_type == "float32"
+    graph = builder.build({"output": output})
+
+
+def test_scatter_nd_full_rank(context):
+    """Test scatterND where k equals input rank"""
+    builder = context.create_graph_builder()
+    data = builder.input("data", [2, 3, 4], "float32")
+    indices = builder.input("indices", [5, 3], "int32")  # k=3 (full rank)
+    updates = builder.input("updates", [5], "float32")  # [5] + []
+    output = builder.scatter_nd(data, indices, updates)
+    assert output.shape == [2, 3, 4]
+    graph = builder.build({"output": output})
+
+
+def test_scatter_nd_4d(context):
+    """Test scatterND on 4D tensor"""
+    builder = context.create_graph_builder()
+    data = builder.input("data", [2, 3, 4, 5], "float32")
+    indices = builder.input("indices", [6, 2], "int32")  # k=2
+    updates = builder.input("updates", [6, 4, 5], "float32")  # [6] + [4, 5]
+    output = builder.scatter_nd(data, indices, updates)
+    assert output.shape == [2, 3, 4, 5]
+    graph = builder.build({"output": output})
+
+
+# Tile tests
+def test_tile_1d(context):
+    """Test tile on 1D tensor"""
+    builder = context.create_graph_builder()
+    x = builder.input("x", [4], "float32")
+    output = builder.tile(x, [2])
+    assert output.shape == [8]  # 4 * 2
+    assert output.data_type == "float32"
+    graph = builder.build({"output": output})
+
+
+def test_tile_2d(context):
+    """Test tile on 2D tensor"""
+    builder = context.create_graph_builder()
+    x = builder.input("x", [2, 3], "float32")
+    output = builder.tile(x, [2, 3])
+    assert output.shape == [4, 9]  # 2*2, 3*3
+    assert output.data_type == "float32"
+    graph = builder.build({"output": output})
+
+
+def test_tile_no_repetition(context):
+    """Test tile with all repetitions = 1"""
+    builder = context.create_graph_builder()
+    x = builder.input("x", [2, 3, 4], "float32")
+    output = builder.tile(x, [1, 1, 1])
+    assert output.shape == [2, 3, 4]
+    graph = builder.build({"output": output})
+
+
+def test_tile_different_repetitions(context):
+    """Test tile with different repetitions per dimension"""
+    builder = context.create_graph_builder()
+    x = builder.input("x", [2, 3], "float32")
+    output = builder.tile(x, [3, 1])
+    assert output.shape == [6, 3]  # 2*3, 3*1
+    graph = builder.build({"output": output})
+
+
+def test_tile_4d(context):
+    """Test tile on 4D tensor"""
+    builder = context.create_graph_builder()
+    x = builder.input("x", [1, 2, 3, 4], "float32")
+    output = builder.tile(x, [2, 1, 2, 1])
+    assert output.shape == [2, 2, 6, 4]  # 1*2, 2*1, 3*2, 4*1
+    graph = builder.build({"output": output})
+
+
+# Triangular tests
+def test_triangular_2d_upper(context):
+    """Test triangular on 2D tensor (upper triangle)"""
+    builder = context.create_graph_builder()
+    x = builder.input("x", [3, 3], "float32")
+    output = builder.triangular(x, True, 0)
+    assert output.shape == [3, 3]
+    assert output.data_type == "float32"
+    graph = builder.build({"output": output})
+
+
+def test_triangular_2d_lower(context):
+    """Test triangular on 2D tensor (lower triangle)"""
+    builder = context.create_graph_builder()
+    x = builder.input("x", [3, 3], "float32")
+    output = builder.triangular(x, False, 0)
+    assert output.shape == [3, 3]
+    graph = builder.build({"output": output})
+
+
+def test_triangular_default_params(context):
+    """Test triangular with default-like parameters (upper=True, diagonal=0)"""
+    builder = context.create_graph_builder()
+    x = builder.input("x", [4, 4], "float32")
+    output = builder.triangular(x, True, 0)  # explicit: upper=True, diagonal=0
+    assert output.shape == [4, 4]
+    graph = builder.build({"output": output})
+
+
+def test_triangular_upper_diagonal_1(context):
+    """Test triangular upper with diagonal offset +1"""
+    builder = context.create_graph_builder()
+    x = builder.input("x", [3, 3], "float32")
+    output = builder.triangular(x, True, 1)
+    assert output.shape == [3, 3]
+    graph = builder.build({"output": output})
+
+
+def test_triangular_lower_diagonal_minus_1(context):
+    """Test triangular lower with diagonal offset -1"""
+    builder = context.create_graph_builder()
+    x = builder.input("x", [3, 3], "float32")
+    output = builder.triangular(x, False, -1)
+    assert output.shape == [3, 3]
+    graph = builder.build({"output": output})
+
+
+def test_triangular_3d(context):
+    """Test triangular on 3D tensor (applies to last 2 dims)"""
+    builder = context.create_graph_builder()
+    x = builder.input("x", [2, 3, 3], "float32")
+    output = builder.triangular(x, True, 0)
+    assert output.shape == [2, 3, 3]
+    graph = builder.build({"output": output})
+
+
+def test_triangular_non_square(context):
+    """Test triangular on non-square matrix"""
+    builder = context.create_graph_builder()
+    x = builder.input("x", [4, 5], "float32")
+    output = builder.triangular(x, True, 0)
+    assert output.shape == [4, 5]
+    graph = builder.build({"output": output})

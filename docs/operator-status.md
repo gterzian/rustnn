@@ -164,6 +164,15 @@ This document tracks the implementation status of all WebNN operators across dif
 | `argMin` | ✅ | ✅ | ✅ | ✅ |
 | `cast` | ✅ | ✅ | ✅ | ✅ |
 
+## Additional Features
+
+| Operation | Shape Inference | Python API | ONNX | CoreML MLProgram |
+|-----------|----------------|------------|------|------------------|
+| `scatterElements` | ✅ | ✅ | ✅ | ✅ |
+| `scatterND` | ✅ | ✅ | ✅ | ✅ |
+| `tile` | ✅ | ✅ | ✅ | ✅ |
+| `triangular` | ✅ | ✅ | ✅ | ✅ |
+
 ---
 
 ## Summary Statistics
@@ -172,28 +181,37 @@ This document tracks the implementation status of all WebNN operators across dif
 WebNN Spec (CR Draft Dec 2025): ~95 total operations
 Core Operations Implemented:     68/68 (100%) ✅
 Advanced Architecture Ops:        6/6  (100%) ✅
-Total Implemented:               74/95 (78%)
+Additional Features:              4/4  (100%) ✅
+Total Implemented:               78/95 (82%)
 Deferred Operations:              4 (RNN: lstm, lstmCell, gru, gruCell)
-Remaining Operations:            ~17 (specialized activations, scatter, tile, etc.)
+Remaining Operations:            ~13 (specialized activations)
 
 Implementation Status:
-Shape Inference:                 74/74 (100%)
-Python API:                      74/74 (100%)
-ONNX Backend:                    74/74 (100%)
-CoreML MLProgram:                74/74 (100%) ✅
+Shape Inference:                 78/78 (100%)
+Python API:                      78/78 (100%)
+ONNX Backend:                    78/78 (100%)
+CoreML MLProgram:                78/78 (100%) ✅
 ```
 
-**🎉 74 WEBNN OPERATIONS FULLY IMPLEMENTED! 🎉**
+**🎉 78 WEBNN OPERATIONS FULLY IMPLEMENTED! 🎉**
 
 ### Implementation Status
 
-All 74 implemented WebNN operations are now fully functional across all backends:
+All 78 implemented WebNN operations are now fully functional across all backends:
 - ✅ **Shape Inference**: Complete type and shape validation for all operations
 - ✅ **Python API**: W3C WebNN spec-compliant Python bindings
 - ✅ **ONNX Backend**: Cross-platform execution with full parameter support
 - ✅ **CoreML MLProgram**: macOS GPU/Neural Engine execution with full parameter support
 
 **Recent Additions:**
+- **Additional Features (4 operations):** `scatterElements`, `scatterND`, `tile`, `triangular`
+  - Full implementation across all backends (shape inference, Python API, ONNX, CoreML)
+  - scatterElements: Scatter updates into tensor at specified indices along an axis
+  - scatterND: Multi-dimensional scatter operation with k-dimensional indices
+  - tile: Repeat tensor along each dimension according to repetitions
+  - triangular: Extract upper or lower triangular part of matrix with diagonal offset
+  - 21 comprehensive Python tests covering various scenarios
+  - Essential for advanced tensor manipulation and Transformer architectures
 - **Advanced Architecture Operations (6 operations):** `gelu`, `squeeze`, `unsqueeze`, `argMax`, `argMin`, `cast`
   - Full implementation across all backends (shape inference, Python API, ONNX, CoreML)
   - Added Int64 data type support for argMax/argMin output
@@ -234,12 +252,7 @@ The following operations are defined in the WebNN specification but are **intent
 
 Based on modern ML architecture requirements, the following operations should be prioritized:
 
-**High Priority (Additional features):**
-- `scatter` - Scatter updates
-- `tile` - Repeat tensor
-- `triangular` - Extract triangular part
-
-**Medium Priority (Specialized activations):**
+**High Priority (Specialized activations):**
 - `prelu`, `elu`, `leakyRelu` - Additional activations
 - `hardSigmoid`, `hardSwish`, `softplus`, `softsign` - Specialized activations
 

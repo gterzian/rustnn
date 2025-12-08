@@ -1472,6 +1472,141 @@ pub fn infer_cast_shape(input_shape: &[u32]) -> Vec<u32> {
     input_shape.to_vec()
 }
 
+/// Infer output shape for scatterElements operation
+/// Output shape equals input shape
+pub fn infer_scatter_elements_shape(
+    input_shape: &[u32],
+    indices_shape: &[u32],
+    updates_shape: &[u32],
+    axis: i32,
+) -> Result<Vec<u32>, GraphError> {
+    let rank = input_shape.len() as i32;
+
+    // Normalize negative axis
+    let normalized_axis = if axis < 0 { rank + axis } else { axis };
+
+    // Validate axis
+    if normalized_axis < 0 || normalized_axis >= rank {
+        return Err(GraphError::ShapeInferenceFailed {
+            reason: format!(
+                "ScatterElements axis {} out of bounds for rank {}, input shape: {:?}",
+                axis, rank, input_shape
+            ),
+        });
+    }
+
+    // Validate that indices and updates have same shape
+    if indices_shape != updates_shape {
+        return Err(GraphError::ShapeInferenceFailed {
+            reason: format!(
+                "ScatterElements indices shape {:?} must match updates shape {:?}",
+                indices_shape, updates_shape
+            ),
+        });
+    }
+
+    // Validate that indices/updates have same rank as input
+    if indices_shape.len() != input_shape.len() {
+        return Err(GraphError::ShapeInferenceFailed {
+            reason: format!(
+                "ScatterElements indices/updates rank {} must match input rank {}, input shape: {:?}",
+                indices_shape.len(),
+                input_shape.len(),
+                input_shape
+            ),
+        });
+    }
+
+    // Output shape equals input shape
+    Ok(input_shape.to_vec())
+}
+
+/// Infer output shape for scatterND operation
+/// Output shape equals input shape
+pub fn infer_scatter_nd_shape(
+    input_shape: &[u32],
+    indices_shape: &[u32],
+    updates_shape: &[u32],
+) -> Result<Vec<u32>, GraphError> {
+    let input_rank = input_shape.len();
+    let indices_rank = indices_shape.len();
+
+    if indices_rank < 1 {
+        return Err(GraphError::ShapeInferenceFailed {
+            reason: "ScatterND indices must have rank >= 1".to_string(),
+        });
+    }
+
+    // k = last dimension of indices (number of index components)
+    let k = indices_shape[indices_rank - 1] as usize;
+
+    if k > input_rank {
+        return Err(GraphError::ShapeInferenceFailed {
+            reason: format!(
+                "ScatterND indices last dimension {} cannot exceed input rank {}, input shape: {:?}",
+                k, input_rank, input_shape
+            ),
+        });
+    }
+
+    // Expected updates shape: indices.shape[:-1] + input.shape[k:]
+    let mut expected_updates_shape = indices_shape[..indices_rank - 1].to_vec();
+    expected_updates_shape.extend_from_slice(&input_shape[k..]);
+
+    if updates_shape != expected_updates_shape.as_slice() {
+        return Err(GraphError::ShapeInferenceFailed {
+            reason: format!(
+                "ScatterND updates shape {:?} must equal indices.shape[:-1] + input.shape[k:] = {:?}",
+                updates_shape, expected_updates_shape
+            ),
+        });
+    }
+
+    // Output shape equals input shape
+    Ok(input_shape.to_vec())
+}
+
+/// Infer output shape for tile operation
+/// Output shape = input shape * repetitions
+pub fn infer_tile_shape(input_shape: &[u32], repetitions: &[u32]) -> Result<Vec<u32>, GraphError> {
+    if input_shape.len() != repetitions.len() {
+        return Err(GraphError::ShapeInferenceFailed {
+            reason: format!(
+                "Tile repetitions length {} must equal input rank {}, input shape: {:?}",
+                repetitions.len(),
+                input_shape.len(),
+                input_shape
+            ),
+        });
+    }
+
+    let output_shape: Vec<u32> = input_shape
+        .iter()
+        .zip(repetitions.iter())
+        .map(|(&dim, &rep)| dim * rep)
+        .collect();
+
+    Ok(output_shape)
+}
+
+/// Infer output shape for triangular operation
+/// Output shape equals input shape (operation applies to last 2 dimensions)
+pub fn infer_triangular_shape(input_shape: &[u32]) -> Result<Vec<u32>, GraphError> {
+    let rank = input_shape.len();
+
+    if rank < 2 {
+        return Err(GraphError::ShapeInferenceFailed {
+            reason: format!(
+                "Triangular operation requires rank >= 2, got rank {}, input shape: {:?}",
+                rank, input_shape
+            ),
+        });
+    }
+
+    // Output shape equals input shape
+    Ok(input_shape.to_vec())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2493,5 +2628,152 @@ mod tests {
         assert_eq!(infer_cast_shape(&[2, 3]), vec![2, 3]);
         assert_eq!(infer_cast_shape(&[4, 5, 6, 7]), vec![4, 5, 6, 7]);
         assert_eq!(infer_cast_shape(&[1]), vec![1]);
+    }
+
+    // ScatterElements tests
+    #[test]
+    fn test_scatter_elements_basic() {
+        // 1D scatter
+        assert_eq!(
+            infer_scatter_elements_shape(&[4], &[4], &[4], 0).unwrap(),
+            vec![4]
+        );
+
+        // 2D scatter along axis 0
+        assert_eq!(
+            infer_scatter_elements_shape(&[3, 4], &[2, 4], &[2, 4], 0).unwrap(),
+            vec![3, 4]
+        );
+
+        // 2D scatter along axis 1
+        assert_eq!(
+            infer_scatter_elements_shape(&[3, 4], &[3, 2], &[3, 2], 1).unwrap(),
+            vec![3, 4]
+        );
+    }
+
+    #[test]
+    fn test_scatter_elements_negative_axis() {
+        // Negative axis
+        assert_eq!(
+            infer_scatter_elements_shape(&[3, 4], &[3, 2], &[3, 2], -1).unwrap(),
+            vec![3, 4]
+        );
+    }
+
+    #[test]
+    fn test_scatter_elements_invalid() {
+        // Indices and updates shape mismatch
+        assert!(infer_scatter_elements_shape(&[3, 4], &[2, 4], &[3, 4], 0).is_err());
+
+        // Rank mismatch
+        assert!(infer_scatter_elements_shape(&[3, 4], &[2], &[2], 0).is_err());
+
+        // Axis out of bounds
+        assert!(infer_scatter_elements_shape(&[3, 4], &[2, 4], &[2, 4], 2).is_err());
+    }
+
+    // ScatterND tests
+    #[test]
+    fn test_scatter_nd_basic() {
+        // Basic 2D case: indices shape [5, 2], input [2, 3, 4]
+        // k=2, so updates shape should be [5] + [4] = [5, 4]
+        assert_eq!(
+            infer_scatter_nd_shape(&[2, 3, 4], &[5, 2], &[5, 4]).unwrap(),
+            vec![2, 3, 4]
+        );
+
+        // k=1 case: indices shape [3, 1], input [4, 5]
+        // updates shape should be [3] + [5] = [3, 5]
+        assert_eq!(
+            infer_scatter_nd_shape(&[4, 5], &[3, 1], &[3, 5]).unwrap(),
+            vec![4, 5]
+        );
+    }
+
+    #[test]
+    fn test_scatter_nd_full_rank() {
+        // k equals input rank: indices shape [5, 3], input [2, 3, 4]
+        // updates shape should be [5] + [] = [5]
+        assert_eq!(
+            infer_scatter_nd_shape(&[2, 3, 4], &[5, 3], &[5]).unwrap(),
+            vec![2, 3, 4]
+        );
+    }
+
+    #[test]
+    fn test_scatter_nd_invalid() {
+        // k > input rank
+        assert!(infer_scatter_nd_shape(&[2, 3], &[5, 4], &[5]).is_err());
+
+        // Updates shape mismatch
+        assert!(infer_scatter_nd_shape(&[2, 3, 4], &[5, 2], &[5, 5]).is_err());
+
+        // Indices rank < 1
+        assert!(infer_scatter_nd_shape(&[2, 3], &[], &[]).is_err());
+    }
+
+    // Tile tests
+    #[test]
+    fn test_tile_basic() {
+        // 1D tile
+        assert_eq!(infer_tile_shape(&[4], &[2]).unwrap(), vec![8]);
+
+        // 2D tile
+        assert_eq!(infer_tile_shape(&[2, 3], &[2, 3]).unwrap(), vec![4, 9]);
+
+        // No repetition (all 1s)
+        assert_eq!(
+            infer_tile_shape(&[2, 3, 4], &[1, 1, 1]).unwrap(),
+            vec![2, 3, 4]
+        );
+    }
+
+    #[test]
+    fn test_tile_different_repetitions() {
+        // Different repetitions per dimension
+        assert_eq!(infer_tile_shape(&[2, 3], &[3, 1]).unwrap(), vec![6, 3]);
+        assert_eq!(
+            infer_tile_shape(&[1, 2, 3], &[2, 3, 1]).unwrap(),
+            vec![2, 6, 3]
+        );
+    }
+
+    #[test]
+    fn test_tile_invalid() {
+        // Repetitions length mismatch
+        assert!(infer_tile_shape(&[2, 3], &[2]).is_err());
+        assert!(infer_tile_shape(&[2, 3], &[2, 3, 1]).is_err());
+    }
+
+    // Triangular tests
+    #[test]
+    fn test_triangular_basic() {
+        // 2D triangular
+        assert_eq!(infer_triangular_shape(&[3, 3]).unwrap(), vec![3, 3]);
+        assert_eq!(infer_triangular_shape(&[4, 5]).unwrap(), vec![4, 5]);
+
+        // 3D triangular (applies to last 2 dims)
+        assert_eq!(infer_triangular_shape(&[2, 3, 3]).unwrap(), vec![2, 3, 3]);
+    }
+
+    #[test]
+    fn test_triangular_higher_rank() {
+        // 4D and 5D tensors
+        assert_eq!(
+            infer_triangular_shape(&[2, 3, 4, 5]).unwrap(),
+            vec![2, 3, 4, 5]
+        );
+        assert_eq!(
+            infer_triangular_shape(&[1, 2, 3, 4, 5]).unwrap(),
+            vec![1, 2, 3, 4, 5]
+        );
+    }
+
+    #[test]
+    fn test_triangular_invalid() {
+        // Rank < 2
+        assert!(infer_triangular_shape(&[5]).is_err());
+        assert!(infer_triangular_shape(&[]).is_err());
     }
 }
