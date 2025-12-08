@@ -749,15 +749,8 @@ def test_identity_computation(context, builder):
 
 
 # Logic operations tests
-# NOTE: These tests currently fail with ONNX Runtime due to type constraints.
-# ONNX requires:
-# - Comparison ops (Equal, Greater, etc.) output bool, not uint8
-# - Logical ops (And, Or, Xor, Not) expect bool inputs/outputs, not float32/uint8
-# TODO: Add Cast operations in ONNX converter to handle type conversions
-
 
 @requires_onnx_runtime
-@pytest.mark.skip(reason="ONNX type conversion not yet implemented for logic operations")
 def test_equal_computation(context, builder):
     """Test element-wise equality comparison"""
     a = builder.input("a", [2, 3], "float32")
@@ -777,7 +770,6 @@ def test_equal_computation(context, builder):
 
 
 @requires_onnx_runtime
-@pytest.mark.skip(reason="ONNX type conversion not yet implemented for logic operations")
 def test_greater_computation(context, builder):
     """Test element-wise greater than comparison"""
     a = builder.input("a", [2, 3], "float32")
@@ -797,7 +789,6 @@ def test_greater_computation(context, builder):
 
 
 @requires_onnx_runtime
-@pytest.mark.skip(reason="ONNX type conversion not yet implemented for logic operations")
 def test_greater_or_equal_computation(context, builder):
     """Test element-wise greater than or equal comparison"""
     a = builder.input("a", [2, 3], "float32")
@@ -817,7 +808,6 @@ def test_greater_or_equal_computation(context, builder):
 
 
 @requires_onnx_runtime
-@pytest.mark.skip(reason="ONNX type conversion not yet implemented for logic operations")
 def test_lesser_computation(context, builder):
     """Test element-wise less than comparison"""
     a = builder.input("a", [2, 3], "float32")
@@ -837,7 +827,6 @@ def test_lesser_computation(context, builder):
 
 
 @requires_onnx_runtime
-@pytest.mark.skip(reason="ONNX type conversion not yet implemented for logic operations")
 def test_lesser_or_equal_computation(context, builder):
     """Test element-wise less than or equal comparison"""
     a = builder.input("a", [2, 3], "float32")
@@ -857,7 +846,6 @@ def test_lesser_or_equal_computation(context, builder):
 
 
 @requires_onnx_runtime
-@pytest.mark.skip(reason="ONNX type conversion not yet implemented for logic operations")
 def test_logical_not_computation(context, builder):
     """Test element-wise logical NOT"""
     x = builder.input("x", [2, 3], "float32")
@@ -876,7 +864,6 @@ def test_logical_not_computation(context, builder):
 
 
 @requires_onnx_runtime
-@pytest.mark.skip(reason="ONNX type conversion not yet implemented for logic operations")
 def test_logical_and_computation(context, builder):
     """Test element-wise logical AND"""
     a = builder.input("a", [2, 3], "float32")
@@ -897,7 +884,6 @@ def test_logical_and_computation(context, builder):
 
 
 @requires_onnx_runtime
-@pytest.mark.skip(reason="ONNX type conversion not yet implemented for logic operations")
 def test_logical_or_computation(context, builder):
     """Test element-wise logical OR"""
     a = builder.input("a", [2, 3], "float32")
@@ -918,7 +904,6 @@ def test_logical_or_computation(context, builder):
 
 
 @requires_onnx_runtime
-@pytest.mark.skip(reason="ONNX type conversion not yet implemented for logic operations")
 def test_logical_xor_computation(context, builder):
     """Test element-wise logical XOR"""
     a = builder.input("a", [2, 3], "float32")

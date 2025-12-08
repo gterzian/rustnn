@@ -59,12 +59,12 @@
     - [x] Special functions: erf, identity (CoreML: ErfLayerParams, multiply workaround for identity)
     - [x] WPT conformance test data: abs, ceil, floor, exp, log, sqrt (14 test cases total)
 
-[x] Logic operations (DONE: shape inference, Python API, ONNX/CoreML converters, 9 tests - all passing with graph builder, ONNX tests skipped pending type conversion)
-    - [x] Comparison operations: equal, greater, greaterOrEqual, lesser, lesserOrEqual (ONNX: mapped to Equal, Greater, GreaterOrEqual, Less, LessOrEqual; CoreML: dedicated layer types with alpha=0.0)
-    - [x] Logical NOT: logicalNot (ONNX: Not; CoreML: LogicalNotLayerParams) - unary operation
-    - [x] Logical operations: logicalAnd, logicalOr, logicalXor (ONNX: And, Or, Xor; CoreML: dedicated layer types)
-    - NOTE: ONNX Runtime tests currently skipped - requires Cast operations to convert between float32/uint8 and bool types
-    - TODO: Add Cast node insertion in ONNX converter for proper type handling
+[x] Logic operations (DONE: shape inference, Python API, ONNX/CoreML converters with Cast node insertion, 9 tests - all passing)
+    - [x] Comparison operations: equal, greater, greaterOrEqual, lesser, lesserOrEqual (ONNX: Equal→Cast(bool→uint8), Greater→Cast, GreaterOrEqual→Cast, Less→Cast, LessOrEqual→Cast; CoreML: dedicated layer types with alpha=0.0)
+    - [x] Logical NOT: logicalNot (ONNX: Cast(input→bool)→Not→Cast(bool→uint8); CoreML: LogicalNotLayerParams) - unary operation
+    - [x] Logical operations: logicalAnd, logicalOr, logicalXor (ONNX: Cast(inputs→bool)→[And/Or/Xor]→Cast(bool→uint8); CoreML: dedicated layer types)
+    - [x] ONNX Cast node insertion: Automatically inserts Cast nodes to handle WebNN uint8 boolean type vs ONNX bool type
+    - Implementation details: create_cast_node() helper with AttributeType::Int, Cast nodes inserted in convert() for all logic operations
 
 [ ] Advanced operations
     - concat (concatenate tensors)
@@ -467,15 +467,18 @@ Last Updated: 2025-12-08
 
 ## Recent Changes (2025-12-08)
 
-### Logic Operations Implementation (Latest)
+### Logic Operations with Cast Node Implementation (Latest)
 - Implemented all 9 logic operations with full WebNN spec compliance
 - Shape inference: Binary operations use broadcasting, unary logicalNot preserves shape
 - Python API: Added 9 methods to MLGraphBuilder (src/python/graph_builder.rs)
-- ONNX conversion: Mapped to Equal, Greater, GreaterOrEqual, Less, LessOrEqual, Not, And, Or, Xor
+- ONNX conversion: Automatic Cast node insertion for type conversions (src/converters/onnx.rs:385-417)
+  - Comparison ops: Execute op (outputs bool) → Cast(bool→uint8)
+  - Logical ops: Cast(inputs→bool) → Execute op → Cast(bool→uint8)
+  - Helper functions: create_cast_node() with AttributeType::Int, create_operation_attributes()
+  - Follows Chromium's WebNN ONNX backend implementation pattern
 - CoreML conversion: Full support with dedicated layer types (alpha=0.0 for comparison ops)
-- Python tests: 9 new tests (tests/test_python_api.py) - skipped for ONNX Runtime due to type constraints
-- ONNX limitation: Requires Cast operations to convert between float32/uint8 and bool types
-- All 132 base tests passing (141 total with 9 skipped logic tests)
+- Python tests: 9 new tests (tests/test_python_api.py) - all graph building tests passing (97 passed, 44 skipped without ONNX Runtime)
+- All tests pass with proper Cast node structure (type field set to AttributeType::Int)
 - Operations implemented: equal, greater, greaterOrEqual, lesser, lesserOrEqual, logicalNot, logicalAnd, logicalOr, logicalXor
 
 ### Element-wise Operations Implementation

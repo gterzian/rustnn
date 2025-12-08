@@ -3,8 +3,8 @@ use crate::error::GraphError;
 use crate::graph::{DataType, GraphInfo, Operation};
 use crate::protos::onnx::{
     AttributeProto, GraphProto, ModelProto, NodeProto, OperatorSetIdProto, TensorProto,
-    TensorShapeProto, TypeProto, ValueInfoProto, tensor_proto::DataType as ProtoDataType,
-    type_proto::Tensor as TensorTypeProto,
+    TensorShapeProto, TypeProto, ValueInfoProto, attribute_proto::AttributeType,
+    tensor_proto::DataType as ProtoDataType, type_proto::Tensor as TensorTypeProto,
 };
 use prost::Message;
 
@@ -381,6 +381,41 @@ impl OnnxConverter {
 
         attributes
     }
+
+    fn create_cast_node(
+        node_name: &str,
+        input: String,
+        output: String,
+        to_data_type: ProtoDataType,
+    ) -> NodeProto {
+        NodeProto {
+            input: vec![input],
+            output: vec![output],
+            name: Some(node_name.to_string()),
+            op_type: Some("Cast".to_string()),
+            attribute: vec![AttributeProto {
+                name: Some("to".to_string()),
+                r#type: Some(AttributeType::Int as i32),
+                i: Some(to_data_type as i64),
+                ..Default::default()
+            }],
+            ..Default::default()
+        }
+    }
+
+    fn create_operation_attributes(op: &Operation) -> Vec<AttributeProto> {
+        if op.op_type == "conv2d" {
+            Self::create_conv2d_attributes(op)
+        } else if op.op_type == "convTranspose2d" {
+            Self::create_conv_transpose2d_attributes(op)
+        } else if op.op_type == "averagePool2d" || op.op_type == "maxPool2d" {
+            Self::create_pool2d_attributes(op)
+        } else if op.op_type.starts_with("reduce") {
+            Self::create_reduce_attributes(op)
+        } else {
+            Vec::new()
+        }
+    }
 }
 
 impl crate::converters::GraphConverter for OnnxConverter {
@@ -426,42 +461,112 @@ impl crate::converters::GraphConverter for OnnxConverter {
             });
         }
 
-        let nodes = graph
-            .operations
-            .iter()
-            .enumerate()
-            .map(|(idx, op)| {
-                // Create attributes based on operation type
-                let attributes = if op.op_type == "conv2d" {
-                    Self::create_conv2d_attributes(op)
-                } else if op.op_type == "convTranspose2d" {
-                    Self::create_conv_transpose2d_attributes(op)
-                } else if op.op_type == "averagePool2d" || op.op_type == "maxPool2d" {
-                    Self::create_pool2d_attributes(op)
-                } else if op.op_type.starts_with("reduce") {
-                    Self::create_reduce_attributes(op)
-                } else {
-                    Vec::new()
-                };
+        // Generate nodes, inserting Cast nodes for logic operations
+        let mut nodes = Vec::new();
+        let mut cast_counter = 0;
 
-                NodeProto {
+        for (idx, op) in graph.operations.iter().enumerate() {
+            let op_name = op
+                .label
+                .clone()
+                .unwrap_or_else(|| format!("{}_{}", op.op_type, idx));
+
+            // Check if this is a logic operation that needs type conversion
+            let is_comparison_op = matches!(
+                op.op_type.as_str(),
+                "equal" | "greater" | "greaterOrEqual" | "lesser" | "lesserOrEqual"
+            );
+            let is_logical_op = matches!(
+                op.op_type.as_str(),
+                "logicalNot" | "logicalAnd" | "logicalOr" | "logicalXor"
+            );
+
+            if is_logical_op {
+                // Logical operations: Cast inputs to bool, execute op, cast output to uint8
+                let mut cast_inputs = Vec::new();
+
+                for &input_id in &op.input_operands {
+                    let input_name = Self::operand_name(graph, input_id);
+                    let cast_output_name = format!("cast_to_bool_{}_{}", op_name, cast_counter);
+                    cast_counter += 1;
+
+                    // Create Cast node: input type -> bool
+                    nodes.push(Self::create_cast_node(
+                        &format!("cast_to_bool_{}", cast_counter - 1),
+                        input_name,
+                        cast_output_name.clone(),
+                        ProtoDataType::Bool,
+                    ));
+
+                    cast_inputs.push(cast_output_name);
+                }
+
+                // Create the logical operation node (outputs bool)
+                let bool_output_name = format!("{}_bool_output", op_name);
+                let attributes = Self::create_operation_attributes(op);
+
+                nodes.push(NodeProto {
+                    input: cast_inputs,
+                    output: vec![bool_output_name.clone()],
+                    name: Some(op_name.clone()),
+                    op_type: Some(Self::onnx_op_type(&op.op_type)),
+                    attribute: attributes,
+                    ..Default::default()
+                });
+
+                // Cast bool output -> uint8
+                nodes.push(Self::create_cast_node(
+                    &format!("cast_to_uint8_{}", cast_counter),
+                    bool_output_name,
+                    Self::operand_name(graph, op.output_operand),
+                    ProtoDataType::Uint8,
+                ));
+                cast_counter += 1;
+            } else if is_comparison_op {
+                // Comparison operations: Execute op (outputs bool), cast output to uint8
+                let bool_output_name = format!("{}_bool_output", op_name);
+                let attributes = Self::create_operation_attributes(op);
+
+                // Create comparison node (outputs bool)
+                nodes.push(NodeProto {
+                    input: op
+                        .input_operands
+                        .iter()
+                        .map(|id| Self::operand_name(graph, *id))
+                        .collect(),
+                    output: vec![bool_output_name.clone()],
+                    name: Some(op_name),
+                    op_type: Some(Self::onnx_op_type(&op.op_type)),
+                    attribute: attributes,
+                    ..Default::default()
+                });
+
+                // Cast bool output -> uint8
+                nodes.push(Self::create_cast_node(
+                    &format!("cast_to_uint8_{}", cast_counter),
+                    bool_output_name,
+                    Self::operand_name(graph, op.output_operand),
+                    ProtoDataType::Uint8,
+                ));
+                cast_counter += 1;
+            } else {
+                // Regular operation - no Cast nodes needed
+                let attributes = Self::create_operation_attributes(op);
+
+                nodes.push(NodeProto {
                     input: op
                         .input_operands
                         .iter()
                         .map(|id| Self::operand_name(graph, *id))
                         .collect(),
                     output: vec![Self::operand_name(graph, op.output_operand)],
-                    name: Some(
-                        op.label
-                            .clone()
-                            .unwrap_or_else(|| format!("{}_{}", op.op_type, idx)),
-                    ),
+                    name: Some(op_name),
                     op_type: Some(Self::onnx_op_type(&op.op_type)),
                     attribute: attributes,
                     ..Default::default()
-                }
-            })
-            .collect();
+                });
+            }
+        }
 
         let graph_proto = GraphProto {
             name: Some("webnn_graph".to_string()),
