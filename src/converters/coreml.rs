@@ -1094,12 +1094,56 @@ impl crate::converters::GraphConverter for CoremlConverter {
                     ..Default::default()
                 }
             }
-            // NOTE: Quantization operations (dequantizeLinear, quantizeLinear) are supported
-            // in Chromium's CoreML backend but not in our current CoreML protobuf definitions
-            // (spec version 5, iOS 14/macOS 11.0). These operations were likely added in a
-            // later CoreML spec version. To add support, update protos/coreml/*.proto with
-            // newer CoreML spec definitions that include DequantizeLinearLayerParams and
-            // QuantizeLinearLayerParams.
+            // ============================================================================
+            // QUANTIZATION OPERATIONS - MLProgram Format Required
+            // ============================================================================
+            //
+            // Quantization operations (dequantizeLinear, quantizeLinear) are NOT available
+            // in the NeuralNetwork format that this converter currently uses.
+            //
+            // CoreML Architecture:
+            // -------------------
+            // CoreML has TWO model formats:
+            //
+            // 1. NeuralNetwork (legacy format, what we currently use):
+            //    - Defined in NeuralNetwork.proto with NeuralNetworkLayer
+            //    - Supports up to CoreML spec v5 (iOS 14, macOS 11.0)
+            //    - Uses fixed layer types in a oneof Layer enum
+            //    - Does NOT support quantization operations
+            //
+            // 2. MLProgram (modern format, what Chromium uses):
+            //    - Defined in MIL.proto (Model Intermediate Language)
+            //    - Supports CoreML spec v7+ (iOS 15+, macOS 12+)
+            //    - Uses flexible MIL operations
+            //    - SUPPORTS quantization via MIL ops: "dequantize", "quantize"
+            //    - Also supports: "constexpr_affine_dequantize", "constexpr_blockwise_shift_scale"
+            //
+            // Implementation Path:
+            // -------------------
+            // To add quantization support, we would need to:
+            //
+            // 1. Create a NEW MLProgram-based converter (src/converters/coreml_mlprogram.rs)
+            // 2. Use mil_spec::Program instead of NeuralNetwork
+            // 3. Add MIL operations to blocks instead of NeuralNetworkLayers
+            // 4. Implement quantization as MIL operations:
+            //    - Operation type: "dequantize" / "quantize"
+            //    - Inputs: input tensor, scale, zero_point
+            //    - Add to block.operations with proper MIL::Operation structure
+            // 5. Set model.mlProgram instead of model.neuralNetwork
+            //
+            // The protobuf definitions (MIL.proto) already exist in our codebase and are
+            // compiled. The types are available at crate::protos::coreml::mil_spec::*.
+            //
+            // References:
+            // - Chromium implementation: services/webnn/coreml/graph_builder_coreml.cc
+            // - Operation names: kOpDequantizeLinearTypeName = "dequantize"
+            //                   kOpQuantizeLinearTypeName = "quantize"
+            // - CoreML spec: Uses Program with Functions and Blocks
+            //
+            // This is a significant undertaking as it requires reimplementing the entire
+            // converter for the MLProgram format. The current NeuralNetwork format works
+            // well for all other operations we support.
+            // ============================================================================
             else {
                 return Err(GraphError::ConversionFailed {
                     format: "coreml".to_string(),

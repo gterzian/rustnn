@@ -88,10 +88,23 @@
     - dequantizeLinear: Converts quantized integers to float32
     - quantizeLinear: Converts float32 to quantized integers
     - Shape inference: Preserves input shape
-    - ONNX support: Fully implemented, maps to DequantizeLinear/QuantizeLinear ops
-    - CoreML support: Operations exist in Chromium's implementation but not in our protobuf
-      definitions (spec v5). Need to update to newer CoreML spec to add DequantizeLinearLayerParams
-      and QuantizeLinearLayerParams.
+    - ONNX support: ✅ Fully implemented, maps to DequantizeLinear/QuantizeLinear ops
+    - CoreML support: ❌ NOT AVAILABLE in NeuralNetwork format (what we use)
+
+      CoreML has TWO formats:
+      1. NeuralNetwork (legacy, spec v5, iOS 14): What we currently implement
+         - Does NOT support quantization operations
+      2. MLProgram (modern, spec v7+, iOS 15+): What Chromium uses
+         - SUPPORTS quantization via MIL operations: "dequantize", "quantize"
+         - Requires completely different converter implementation
+
+      To add CoreML quantization support:
+      - Implement new MLProgram-based converter (src/converters/coreml_mlprogram.rs)
+      - Use mil_spec::Program instead of NeuralNetwork
+      - Add MIL operations to blocks
+      - Protobuf definitions already exist (MIL.proto, already compiled)
+      - See detailed notes in src/converters/coreml.rs:1097-1146
+
     - Tests: 5 tests added (test_dequantize_linear, test_quantize_linear, uint8 variants, roundtrip)
 
 [x] Shape inference and broadcasting
