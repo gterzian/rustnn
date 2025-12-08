@@ -1,3 +1,9 @@
+//! Compiled computational graph representation
+//!
+//! PyO3 macros generate unsafe code that triggers unsafe_op_in_unsafe_fn warnings.
+//! This is expected behavior from the macro-generated code.
+#![allow(unsafe_op_in_unsafe_fn)]
+
 use crate::graph::GraphInfo;
 use pyo3::prelude::*;
 
