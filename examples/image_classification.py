@@ -21,6 +21,7 @@ Usage:
 
 import sys
 import time
+import argparse
 from pathlib import Path
 
 try:
@@ -188,28 +189,45 @@ def get_top_predictions(probabilities, top_k=5):
 
 def main():
     """Main function to run image classification demo."""
-    if len(sys.argv) < 2:
-        print("Usage: python image_classification.py <image_path>")
-        print("\nExample:")
-        print("  python examples/image_classification.py examples/images/cat.jpg")
+    parser = argparse.ArgumentParser(description="WebNN Image Classification Demo")
+    parser.add_argument("image_path", help="Path to the input image")
+    parser.add_argument(
+        "--backend",
+        choices=["cpu", "gpu", "coreml"],
+        default="cpu",
+        help="Backend to use: cpu (ONNX CPU), gpu (ONNX GPU), or coreml (CoreML on macOS)",
+    )
+    args = parser.parse_args()
+
+    if not Path(args.image_path).exists():
+        print(f"Error: Image file not found: {args.image_path}")
         sys.exit(1)
 
-    image_path = sys.argv[1]
-
-    if not Path(image_path).exists():
-        print(f"Error: Image file not found: {image_path}")
-        sys.exit(1)
+    # Determine backend settings
+    if args.backend == "cpu":
+        accelerated = False
+        power_preference = "default"
+        backend_name = "ONNX CPU"
+    elif args.backend == "gpu":
+        accelerated = True
+        power_preference = "high-performance"
+        backend_name = "ONNX GPU"
+    else:  # coreml
+        accelerated = True
+        power_preference = "low-power"
+        backend_name = "CoreML"
 
     print("=" * 60)
     print("WebNN Image Classification Demo")
     print("=" * 60)
-    print(f"Image: {image_path}")
+    print(f"Image: {args.image_path}")
+    print(f"Backend: {backend_name}")
     print()
 
     # Load and preprocess image
     print("1. Loading and preprocessing image...")
     start_time = time.time()
-    input_data = load_and_preprocess_image(image_path)
+    input_data = load_and_preprocess_image(args.image_path)
     preprocess_time = (time.time() - start_time) * 1000
     print(f"   ✓ Preprocessed to shape {input_data.shape} ({preprocess_time:.2f}ms)")
     print()
@@ -217,7 +235,7 @@ def main():
     # Create WebNN context
     print("2. Creating WebNN context...")
     ml = webnn.ML()
-    context = ml.create_context(power_preference="default", accelerated=False)
+    context = ml.create_context(power_preference=power_preference, accelerated=accelerated)
     print(f"   ✓ Context created (accelerated={context.accelerated}, power={context.power_preference})")
     print()
 
