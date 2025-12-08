@@ -13,7 +13,7 @@ ORT_DIR ?= target/onnxruntime
 ORT_LIB_DIR ?= $(ORT_DIR)/onnxruntime-osx-arm64-$(ORT_VERSION)/lib
 ORT_LIB_LOCATION ?= $(ORT_LIB_DIR)
 .PHONY: build test fmt run viz onnx coreml coreml-validate onnx-validate validate-all-env \
-	python-dev python-build python-test python-test-wpt python-clean python-example mobilenet-demo \
+	python-dev python-build python-test python-test-wpt python-clean python-example mobilenet-demo text-gen-demo \
 	docs-serve docs-build docs-clean ci-docs \
 	help clean-all
 
@@ -148,6 +148,21 @@ mobilenet-demo: python-dev
 	@echo "All three backends completed successfully!"
 	@echo "========================================================================"
 
+text-gen-demo: python-dev
+	@echo "========================================================================"
+	@echo "Text Generation Demo with Attention (WebNN)"
+	@echo "========================================================================"
+	@echo ""
+	@if [ -f .venv-webnn/bin/python ]; then \
+		DYLD_LIBRARY_PATH=$(ORT_LIB_DIR) .venv-webnn/bin/python examples/text_generation_gpt.py --prompt "Hello world" --tokens 30 --temperature 0.8 --backend cpu; \
+	else \
+		DYLD_LIBRARY_PATH=$(ORT_LIB_DIR) python examples/text_generation_gpt.py --prompt "Hello world" --tokens 30 --temperature 0.8 --backend cpu; \
+	fi
+	@echo ""
+	@echo "========================================================================"
+	@echo "Text generation demo completed!"
+	@echo "========================================================================"
+
 python-clean:
 	@echo "Cleaning Python artifacts..."
 	rm -rf target/wheels
@@ -222,6 +237,7 @@ help:
 	@echo "  python-test-wpt    - Run WPT conformance tests only"
 	@echo "  python-example     - Run Python examples"
 	@echo "  mobilenet-demo     - Run MobileNetV2 classifier on all 3 backends"
+	@echo "  text-gen-demo      - Run text generation with attention demo"
 	@echo "  python-clean       - Clean Python artifacts"
 	@echo ""
 	@echo "Documentation:"
