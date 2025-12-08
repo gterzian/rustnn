@@ -217,6 +217,14 @@ All 85 implemented WebNN operations are now fully functional across all backends
 - ✅ **CoreML MLProgram**: macOS GPU/Neural Engine execution with full parameter support
 
 **Recent Additions:**
+- **CoreML End-to-End Execution (2025-12-08):**
+  - Completed CoreML MLProgram backend implementation with full end-to-end execution
+  - Fixed reshape operation: Added shape parameter extraction from attributes
+  - Fixed softmax operation: Added axis parameter with proper default (-1)
+  - Updated CoreML specification version to 9 (iOS 18+, macOS 15+)
+  - Added ModelDescription with FeatureType conversion for inputs/outputs
+  - Verified successful inference on all three backends: ONNX CPU (27.11ms), ONNX GPU (25.82ms), CoreML (26.05ms)
+  - All 85 operations now execute correctly on macOS GPU/Neural Engine via CoreML
 - **Specialized Activations (7 operations):** `prelu`, `elu`, `leakyRelu`, `hardSigmoid`, `hardSwish`, `softplus`, `softsign`
   - Full implementation across all backends (shape inference, Python API, ONNX, CoreML)
   - PReLU supports unidirectional broadcasting for slope tensor

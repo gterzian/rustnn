@@ -759,11 +759,25 @@ impl CoremlMlProgramConverter {
                 inputs.insert("keep_dims".to_string(), Self::create_immediate_bool(true));
             }
 
+            // Softmax operation (requires axis parameter)
+            "softmax" => {
+                if !input_names.is_empty() {
+                    inputs.insert("x".to_string(), Self::create_argument(&input_names[0]));
+                }
+                // Default axis is -1 (last dimension) if not specified
+                let axis = op
+                    .attributes
+                    .get("axis")
+                    .and_then(|v| v.as_i64())
+                    .unwrap_or(-1) as i32;
+                inputs.insert("axis".to_string(), Self::create_immediate_int(axis as u32));
+            }
+
             // Unary operations: x
-            "relu" | "sigmoid" | "tanh" | "softmax" | "abs" | "ceil" | "floor" | "round"
-            | "neg" | "sign" | "identity" | "exp" | "log" | "sqrt" | "reciprocal" | "sin"
-            | "cos" | "tan" | "asin" | "acos" | "atan" | "sinh" | "cosh" | "asinh" | "acosh"
-            | "atanh" | "erf" | "logicalnot" | "softplus" | "softsign" => {
+            "relu" | "sigmoid" | "tanh" | "abs" | "ceil" | "floor" | "round" | "neg" | "sign"
+            | "identity" | "exp" | "log" | "sqrt" | "reciprocal" | "sin" | "cos" | "tan"
+            | "asin" | "acos" | "atan" | "sinh" | "cosh" | "asinh" | "acosh" | "atanh" | "erf"
+            | "logicalnot" | "softplus" | "softsign" => {
                 if !input_names.is_empty() {
                     inputs.insert("x".to_string(), Self::create_argument(&input_names[0]));
                 }
@@ -850,7 +864,21 @@ impl CoremlMlProgramConverter {
                 if !input_names.is_empty() {
                     inputs.insert("x".to_string(), Self::create_argument(&input_names[0]));
                 }
-                // TODO: Add shape parameter from attributes
+
+                // Add shape parameter from attributes
+                if let Some(new_shape) = op.attributes.get("newShape").and_then(|v| v.as_array()) {
+                    let shape_values: Vec<u32> = new_shape
+                        .iter()
+                        .filter_map(|v| v.as_i64().map(|i| i as u32))
+                        .collect();
+
+                    if !shape_values.is_empty() {
+                        inputs.insert(
+                            "shape".to_string(),
+                            Self::create_immediate_int_array(&shape_values),
+                        );
+                    }
+                }
             }
 
             // Convolution operations: input, filter + parameters
@@ -1480,6 +1508,48 @@ impl CoremlMlProgramConverter {
 
         Ok(inputs)
     }
+
+    /// Create a FeatureType for model description from an OperandDescriptor
+    fn create_feature_type(
+        descriptor: &crate::graph::OperandDescriptor,
+    ) -> Result<crate::protos::coreml::specification::FeatureType, GraphError> {
+        use crate::protos::coreml::specification::{ArrayFeatureType, FeatureType, feature_type};
+
+        // Map WebNN data type to CoreML array data type
+        let array_data_type = match descriptor.data_type {
+            DataType::Float32 => {
+                crate::protos::coreml::specification::array_feature_type::ArrayDataType::Float32
+            }
+            DataType::Float16 => {
+                crate::protos::coreml::specification::array_feature_type::ArrayDataType::Float16
+            }
+            DataType::Int32 => {
+                crate::protos::coreml::specification::array_feature_type::ArrayDataType::Int32
+            }
+            _ => {
+                return Err(GraphError::ConversionFailed {
+                    format: "coreml_mlprogram".to_string(),
+                    reason: format!("Unsupported feature data type: {:?}", descriptor.data_type),
+                });
+            }
+        };
+
+        // Create array feature type with shape
+        let mut array_feature = ArrayFeatureType {
+            data_type: array_data_type as i32,
+            ..Default::default()
+        };
+
+        // Add shape dimensions
+        for &dim in &descriptor.shape {
+            array_feature.shape.push(dim as i64);
+        }
+
+        Ok(FeatureType {
+            r#type: Some(feature_type::Type::MultiArrayType(array_feature)),
+            is_optional: false,
+        })
+    }
 }
 
 impl super::GraphConverter for CoremlMlProgramConverter {
@@ -1544,9 +1614,49 @@ impl super::GraphConverter for CoremlMlProgramConverter {
 
         // Create Model
         let mut model = Model {
-            specification_version: 7, // CoreML 7 (iOS 15+, macOS 12+)
+            specification_version: 9, // CoreML 9 (iOS 18+, macOS 15+) - required for empty inputs
             ..Default::default()
         };
+
+        // Create ModelDescription with function descriptions
+        use crate::protos::coreml::specification::{
+            FeatureDescription, FunctionDescription, ModelDescription,
+        };
+
+        let mut function_desc = FunctionDescription {
+            name: "main".to_string(),
+            ..Default::default()
+        };
+
+        // Add input descriptions
+        for &input_id in &graph_info.input_operands {
+            if let Some(operand) = graph_info.operand(input_id) {
+                let input_name = Self::operand_name(graph_info, input_id);
+                function_desc.input.push(FeatureDescription {
+                    name: input_name,
+                    r#type: Some(Self::create_feature_type(&operand.descriptor)?),
+                    ..Default::default()
+                });
+            }
+        }
+
+        // Add output descriptions
+        for &output_id in &graph_info.output_operands {
+            if let Some(operand) = graph_info.operand(output_id) {
+                let output_name = Self::operand_name(graph_info, output_id);
+                function_desc.output.push(FeatureDescription {
+                    name: output_name,
+                    r#type: Some(Self::create_feature_type(&operand.descriptor)?),
+                    ..Default::default()
+                });
+            }
+        }
+
+        model.description = Some(ModelDescription {
+            functions: vec![function_desc],
+            default_function_name: "main".to_string(),
+            ..Default::default()
+        });
 
         // Set MLProgram
         model.r#type = Some(crate::protos::coreml::specification::model::Type::MlProgram(program));
