@@ -13,7 +13,7 @@ ORT_DIR ?= target/onnxruntime
 ORT_LIB_DIR ?= $(ORT_DIR)/onnxruntime-osx-arm64-$(ORT_VERSION)/lib
 ORT_LIB_LOCATION ?= $(ORT_LIB_DIR)
 .PHONY: build test fmt run viz onnx coreml coreml-validate onnx-validate validate-all-env \
-	python-dev python-build python-test python-test-wpt python-clean python-example \
+	python-dev python-build python-test python-test-wpt python-clean python-example mobilenet-demo \
 	docs-serve docs-build docs-clean ci-docs \
 	help clean-all
 
@@ -115,6 +115,27 @@ python-example: python-dev
 		python examples/python_matmul.py; \
 	fi
 
+mobilenet-demo: python-dev
+	@echo "========================================================================"
+	@echo "Running MobileNetV2 Image Classifier on All Backends"
+	@echo "========================================================================"
+	@echo ""
+	@echo "Backend 1/3: ONNX CPU"
+	@echo "------------------------------------------------------------------------"
+	@DYLD_LIBRARY_PATH=$(ORT_LIB_DIR) python examples/mobilenetv2_complete.py examples/images/test.jpg --backend cpu
+	@echo ""
+	@echo "Backend 2/3: ONNX GPU"
+	@echo "------------------------------------------------------------------------"
+	@DYLD_LIBRARY_PATH=$(ORT_LIB_DIR) python examples/mobilenetv2_complete.py examples/images/test.jpg --backend gpu
+	@echo ""
+	@echo "Backend 3/3: CoreML (Neural Engine)"
+	@echo "------------------------------------------------------------------------"
+	@DYLD_LIBRARY_PATH=$(ORT_LIB_DIR) python examples/mobilenetv2_complete.py examples/images/test.jpg --backend coreml
+	@echo ""
+	@echo "========================================================================"
+	@echo "All three backends completed successfully!"
+	@echo "========================================================================"
+
 python-clean:
 	@echo "Cleaning Python artifacts..."
 	rm -rf target/wheels
@@ -188,6 +209,7 @@ help:
 	@echo "  python-test        - Run all Python tests (includes WPT tests)"
 	@echo "  python-test-wpt    - Run WPT conformance tests only"
 	@echo "  python-example     - Run Python examples"
+	@echo "  mobilenet-demo     - Run MobileNetV2 classifier on all 3 backends"
 	@echo "  python-clean       - Clean Python artifacts"
 	@echo ""
 	@echo "Documentation:"
