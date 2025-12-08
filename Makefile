@@ -108,11 +108,11 @@ python-test-wpt: python-dev
 python-example: python-dev
 	@echo "Running Python examples..."
 	@if [ -f .venv-webnn/bin/python ]; then \
-		.venv-webnn/bin/python examples/python_simple.py; \
-		.venv-webnn/bin/python examples/python_matmul.py; \
+		DYLD_LIBRARY_PATH=$(ORT_LIB_DIR) .venv-webnn/bin/python examples/python_simple.py; \
+		DYLD_LIBRARY_PATH=$(ORT_LIB_DIR) .venv-webnn/bin/python examples/python_matmul.py; \
 	else \
-		python examples/python_simple.py; \
-		python examples/python_matmul.py; \
+		DYLD_LIBRARY_PATH=$(ORT_LIB_DIR) python examples/python_simple.py; \
+		DYLD_LIBRARY_PATH=$(ORT_LIB_DIR) python examples/python_matmul.py; \
 	fi
 
 mobilenet-demo: python-dev
