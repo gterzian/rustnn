@@ -471,14 +471,22 @@ Last Updated: 2025-12-08
 - Implemented all 9 logic operations with full WebNN spec compliance
 - Shape inference: Binary operations use broadcasting, unary logicalNot preserves shape
 - Python API: Added 9 methods to MLGraphBuilder (src/python/graph_builder.rs)
-- ONNX conversion: Automatic Cast node insertion for type conversions (src/converters/onnx.rs:385-417)
-  - Comparison ops: Execute op (outputs bool) → Cast(bool→uint8)
-  - Logical ops: Cast(inputs→bool) → Execute op → Cast(bool→uint8)
+- ONNX conversion: Automatic Cast node insertion for type conversions (src/converters/onnx.rs:446-580)
+  - **WORKAROUND**: Currently casts bool → float32 (should be bool → uint8)
+  - Reason: onnxruntime-rs v0.0.14 API hardcodes session.run() to return Vec<OrtOwnedTensor<f32, _>>
+  - Cannot read uint8 tensors with current API (no try_extract, no dynamic types)
+  - Chromium correctly uses bool → uint8, but has dynamic type support
+  - **PROPER FIX**: Upgrade onnxruntime-rs when newer version supports dynamic tensor types
+    - Project: https://github.com/nbigaouette/onnxruntime-rs
+    - Need: try_extract() method or similar for type-safe extraction
+    - Then change: Cast(bool → float32) to Cast(bool → uint8)
+    - Update output ValueInfo types from Float32 back to Uint8
+  - Comparison ops: Execute op (outputs bool) → Cast(bool→float32)  [TEMP]
+  - Logical ops: Cast(inputs→bool) → Execute op → Cast(bool→float32)  [TEMP]
   - Helper functions: create_cast_node() with AttributeType::Int, create_operation_attributes()
-  - Follows Chromium's WebNN ONNX backend implementation pattern
 - CoreML conversion: Full support with dedicated layer types (alpha=0.0 for comparison ops)
-- Python tests: 9 new tests (tests/test_python_api.py) - all graph building tests passing (97 passed, 44 skipped without ONNX Runtime)
-- All tests pass with proper Cast node structure (type field set to AttributeType::Int)
+- Python tests: All 9 tests PASSING with ONNX Runtime (141 passed total)
+- All tests pass with Cast node structure (type field set to AttributeType::Int)
 - Operations implemented: equal, greater, greaterOrEqual, lesser, lesserOrEqual, logicalNot, logicalAnd, logicalOr, logicalXor
 
 ### Element-wise Operations Implementation

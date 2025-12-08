@@ -443,7 +443,17 @@ impl crate::converters::GraphConverter for OnnxConverter {
                 .operand(id)
                 .ok_or_else(|| GraphError::InvalidConversionOperand { operand: id })?;
 
-            // Logic operations output uint8 in WebNN but float32 in ONNX (for executor compatibility)
+            // WORKAROUND: Logic operations output uint8 in WebNN but float32 in ONNX
+            //
+            // This is a temporary workaround for onnxruntime-rs v0.0.14 limitations.
+            // The crate's API hardcodes session.run() to return Vec<OrtOwnedTensor<f32, _>>,
+            // making it impossible to read uint8 outputs correctly.
+            //
+            // PROPER FIX: Once onnxruntime-rs supports dynamic tensor types (try_extract, etc.),
+            // this should cast to Uint8 as per WebNN spec, matching Chromium's implementation:
+            //   Cast(bool → uint8) instead of Cast(bool → float32)
+            //
+            // See: https://github.com/nbigaouette/onnxruntime-rs
             let mut descriptor = operand.descriptor.clone();
             if descriptor.data_type == DataType::Uint8 {
                 // Check if this output comes from a logic operation
@@ -536,7 +546,8 @@ impl crate::converters::GraphConverter for OnnxConverter {
                     ..Default::default()
                 });
 
-                // Cast bool output -> float (for executor compatibility)
+                // WORKAROUND: Cast bool → float32 (should be bool → uint8)
+                // See comment at line 446 for details on onnxruntime-rs v0.0.14 limitations
                 nodes.push(Self::create_cast_node(
                     &format!("cast_to_float_{}", cast_counter),
                     bool_output_name,
@@ -563,7 +574,8 @@ impl crate::converters::GraphConverter for OnnxConverter {
                     ..Default::default()
                 });
 
-                // Cast bool output -> float (for executor compatibility)
+                // WORKAROUND: Cast bool → float32 (should be bool → uint8)
+                // See comment at line 446 for details on onnxruntime-rs v0.0.14 limitations
                 nodes.push(Self::create_cast_node(
                     &format!("cast_to_float_{}", cast_counter),
                     bool_output_name,
