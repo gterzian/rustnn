@@ -214,8 +214,8 @@ impl PyMLContext {
             pyo3::exceptions::PyRuntimeError::new_err(format!("CoreML conversion failed: {}", e))
         })?;
 
-        // Parse device type
-        let compute_units = match device {
+        // Parse device type (for future use with CoreML compute units selection)
+        let _compute_units = match device {
             "cpu" => 0,
             "gpu" => 1,
             "npu" => 2,
@@ -227,8 +227,21 @@ impl PyMLContext {
             }
         };
 
+        // Build input descriptors map
+        use std::collections::HashMap;
+        let mut inputs = HashMap::new();
+        for &input_id in &graph.graph_info.input_operands {
+            if let Some(operand) = graph.graph_info.operand(input_id) {
+                let name = operand
+                    .name
+                    .clone()
+                    .unwrap_or_else(|| format!("input_{}", input_id));
+                inputs.insert(name, operand.descriptor.clone());
+            }
+        }
+
         // Execute
-        run_coreml_zeroed_cached(&converted.data, compute_units).map_err(|e| {
+        run_coreml_zeroed_cached(&converted.data, &inputs, None).map_err(|e| {
             pyo3::exceptions::PyRuntimeError::new_err(format!("CoreML execution failed: {}", e))
         })?;
 
@@ -497,8 +510,21 @@ impl PyMLContext {
             pyo3::exceptions::PyRuntimeError::new_err(format!("CoreML conversion failed: {}", e))
         })?;
 
+        // Build input descriptors map
+        use std::collections::HashMap;
+        let mut input_descriptors = HashMap::new();
+        for &input_id in &graph.graph_info.input_operands {
+            if let Some(operand) = graph.graph_info.operand(input_id) {
+                let name = operand
+                    .name
+                    .clone()
+                    .unwrap_or_else(|| format!("input_{}", input_id));
+                input_descriptors.insert(name, operand.descriptor.clone());
+            }
+        }
+
         // Execute with CoreML (currently returns zeros)
-        run_coreml_zeroed_cached(&converted.data).map_err(|e| {
+        run_coreml_zeroed_cached(&converted.data, &input_descriptors, None).map_err(|e| {
             pyo3::exceptions::PyRuntimeError::new_err(format!("CoreML execution failed: {}", e))
         })?;
 

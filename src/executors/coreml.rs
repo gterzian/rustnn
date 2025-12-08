@@ -191,7 +191,7 @@ unsafe fn collect_outputs(provider: *mut Object) -> Result<Vec<CoremlOutput>, Gr
     let mut outputs = Vec::new();
     for idx in 0..count {
         let name_obj: *mut Object = msg_send![names_array, objectAtIndex: idx];
-        let rust_name = nsstring_to_string(name_obj);
+        let rust_name = unsafe { nsstring_to_string(name_obj) };
         let value: *mut Object = msg_send![provider, featureValueForName: name_obj];
         let array: *mut Object = msg_send![value, multiArrayValue];
         if array.is_null() {
@@ -201,7 +201,7 @@ unsafe fn collect_outputs(provider: *mut Object) -> Result<Vec<CoremlOutput>, Gr
         }
         let data_type: i64 = msg_send![array, dataType];
         let shape_nsarray: *mut Object = msg_send![array, shape];
-        let shape = nsarray_to_i64_vec(shape_nsarray)?;
+        let shape = unsafe { nsarray_to_i64_vec(shape_nsarray)? };
         outputs.push(CoremlOutput {
             name: rust_name,
             shape,
@@ -216,18 +216,18 @@ unsafe fn prepare_compiled_model(
     cached_compiled: Option<&Path>,
 ) -> Result<(*mut Object, PathBuf, Option<PathBuf>), GraphError> {
     let temp_mlmodel = write_temp_model(model_bytes)?;
-    let url = nsurl_from_path(&temp_mlmodel)?;
+    let url = unsafe { nsurl_from_path(&temp_mlmodel)? };
     let mut compile_error: *mut Object = ptr::null_mut();
     let compiled_url: *mut Object =
         msg_send![class!(MLModel), compileModelAtURL: url error: &mut compile_error];
     if compiled_url.is_null() {
         return Err(GraphError::CoremlRuntimeFailed {
-            reason: ns_error_to_string(compile_error, "MLModel compile failed"),
+            reason: unsafe { ns_error_to_string(compile_error, "MLModel compile failed") },
         });
     }
 
     let compiled_path_obj: *mut Object = msg_send![compiled_url, path];
-    let compiled_src_path = PathBuf::from(nsstring_to_string(compiled_path_obj));
+    let compiled_src_path = PathBuf::from(unsafe { nsstring_to_string(compiled_path_obj) });
 
     if let Some(path) = cached_compiled {
         if path.exists() {
@@ -238,7 +238,7 @@ unsafe fn prepare_compiled_model(
                 reason: format!("failed to persist compiled model: {}", err),
             });
         }
-        let persisted_url = nsurl_from_path(path)?;
+        let persisted_url = unsafe { nsurl_from_path(path)? };
         return Ok((persisted_url, path.to_path_buf(), Some(temp_mlmodel)));
     }
 
@@ -287,6 +287,7 @@ fn map_dtype(data_type: DataType) -> Result<i32, GraphError> {
         DataType::Float32 => 32, // MLMultiArrayDataTypeFloat32
         DataType::Float16 => 16, // MLMultiArrayDataTypeFloat16
         DataType::Int32 => 3,    // MLMultiArrayDataTypeInt32
+        DataType::Int64 => 4,    // Closest available type
         DataType::Int8 => 1,     // MLMultiArrayDataTypeInt8
         DataType::Uint8 => 1,    // closest available signed byte type
         DataType::Uint32 => 3,   // closest available signed int type
@@ -318,7 +319,7 @@ unsafe fn nsurl_from_path(path: &Path) -> Result<*mut Object, GraphError> {
         .ok_or_else(|| GraphError::CoremlRuntimeFailed {
             reason: format!("invalid path for CoreML model: {}", path.display()),
         })?;
-    let ns_path = nsstring_from_str(path_str)?;
+    let ns_path = unsafe { nsstring_from_str(path_str)? };
     let url: *mut Object = msg_send![class!(NSURL), fileURLWithPath: ns_path];
     Ok(url)
 }
@@ -339,7 +340,7 @@ unsafe fn create_multi_array(shape: &[i64], data_type: i32) -> Result<*mut Objec
         msg_send![alloc, initWithShape: nsarray dataType: data_type error: &mut error];
     if array.is_null() {
         return Err(GraphError::CoremlRuntimeFailed {
-            reason: ns_error_to_string(error, "MLMultiArray init failed"),
+            reason: unsafe { ns_error_to_string(error, "MLMultiArray init failed") },
         });
     }
     Ok(array)
@@ -362,25 +363,31 @@ unsafe fn fill_zero(
     let ptr: *mut c_void = msg_send![array, dataPointer];
     match data_type {
         DataType::Float32 => {
-            let slice = std::slice::from_raw_parts_mut(ptr as *mut f32, count);
+            let slice = unsafe { std::slice::from_raw_parts_mut(ptr as *mut f32, count) };
             for v in slice.iter_mut() {
                 *v = 0.0;
             }
         }
         DataType::Float16 => {
-            let slice = std::slice::from_raw_parts_mut(ptr as *mut u16, count);
+            let slice = unsafe { std::slice::from_raw_parts_mut(ptr as *mut u16, count) };
             for v in slice.iter_mut() {
                 *v = 0;
             }
         }
         DataType::Int32 | DataType::Uint32 => {
-            let slice = std::slice::from_raw_parts_mut(ptr as *mut i32, count);
+            let slice = unsafe { std::slice::from_raw_parts_mut(ptr as *mut i32, count) };
+            for v in slice.iter_mut() {
+                *v = 0;
+            }
+        }
+        DataType::Int64 => {
+            let slice = unsafe { std::slice::from_raw_parts_mut(ptr as *mut i64, count) };
             for v in slice.iter_mut() {
                 *v = 0;
             }
         }
         DataType::Int8 | DataType::Uint8 => {
-            let slice = std::slice::from_raw_parts_mut(ptr as *mut i8, count);
+            let slice = unsafe { std::slice::from_raw_parts_mut(ptr as *mut i8, count) };
             for v in slice.iter_mut() {
                 *v = 0;
             }
@@ -405,7 +412,7 @@ unsafe fn nsstring_to_string(obj: *mut Object) -> String {
     if c_str.is_null() {
         return String::new();
     }
-    CStr::from_ptr(c_str).to_string_lossy().into_owned()
+    unsafe { CStr::from_ptr(c_str).to_string_lossy().into_owned() }
 }
 
 unsafe fn ns_error_to_string(error: *mut Object, default: &str) -> String {
@@ -416,7 +423,7 @@ unsafe fn ns_error_to_string(error: *mut Object, default: &str) -> String {
     if desc.is_null() {
         return default.to_string();
     }
-    nsstring_to_string(desc)
+    unsafe { nsstring_to_string(desc) }
 }
 
 fn copy_dir_recursively(src: &Path, dst: &Path) -> std::io::Result<()> {
