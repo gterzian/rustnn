@@ -194,9 +194,9 @@ text-gen-train: python-dev
 	@echo "========================================================================"
 	@echo ""
 	@if [ -f .venv-webnn/bin/python ]; then \
-		DYLD_LIBRARY_PATH=$(ORT_LIB_DIR) .venv-webnn/bin/python examples/train_text_model.py --data examples/sample_text.txt --epochs 10 --batch-size 32 --lr 0.001 --save trained_model.json; \
+		DYLD_LIBRARY_PATH=$(ORT_LIB_DIR) .venv-webnn/bin/python examples/train_text_model.py --data examples/sample_text.txt --epochs 10 --batch-size 32 --lr 0.05 --save trained_model.json; \
 	else \
-		DYLD_LIBRARY_PATH=$(ORT_LIB_DIR) python examples/train_text_model.py --data examples/sample_text.txt --epochs 10 --batch-size 32 --lr 0.001 --save trained_model.json; \
+		DYLD_LIBRARY_PATH=$(ORT_LIB_DIR) python examples/train_text_model.py --data examples/sample_text.txt --epochs 10 --batch-size 32 --lr 0.05 --save trained_model.json; \
 	fi
 	@echo ""
 	@echo "========================================================================"

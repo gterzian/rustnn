@@ -3,8 +3,13 @@
 Train the Text Generation Model
 ===============================
 
-This script trains the SimpleTransformerLM model on text data.
-The trained weights can then be loaded in text_generation_gpt.py for generation.
+⚠️  NOTE: This is a TOY training script for DEMONSTRATION ONLY.
+    It uses simple finite-difference gradients and won't produce
+    quality results. The real purpose is to show how to save/load
+    weights and demonstrate the training workflow concept.
+
+    For real training, use proper frameworks (PyTorch, etc.) with
+    backpropagation and real optimization algorithms.
 
 Usage:
     python train_text_model.py --data shakespeare.txt --epochs 10 --save model.json
@@ -104,62 +109,68 @@ def compute_loss(model, X_batch, y_batch):
     return total_loss / batch_size
 
 
-def train_step(model, X_batch, y_batch, lr=0.01):
+def train_step(model, X_batch, y_batch, lr=0.05):
     """
     Perform one training step with simple gradient descent.
-    This is a simplified training loop for demonstration.
+    Improved to focus on most important parameters.
     """
     batch_size = X_batch.shape[0]
-
-    # Compute gradients (numerical approximation for simplicity)
     epsilon = 0.0001
 
     # Get original loss
     loss = compute_loss(model, X_batch, y_batch)
 
-    # Update token embeddings (sample a few)
-    for _ in range(5):  # Update 5 random embeddings per step
-        idx = np.random.randint(0, model.vocab_size)
-        for dim in range(min(10, model.d_model)):  # Update 10 dimensions
-            # Finite difference
-            model.token_embed[idx, dim] += epsilon
+    # Collect unique tokens in this batch
+    unique_tokens = np.unique(np.concatenate([X_batch.flatten(), y_batch]))
+
+    # Update embeddings for tokens that appear in this batch (more focused)
+    for token_id in unique_tokens[:min(10, len(unique_tokens))]:
+        if token_id < model.vocab_size:
+            for dim in range(0, model.d_model, 4):  # Update every 4th dimension
+                model.token_embed[token_id, dim] += epsilon
+                loss_plus = compute_loss(model, X_batch, y_batch)
+                model.token_embed[token_id, dim] -= epsilon
+
+                grad = (loss_plus - loss) / epsilon
+                model.token_embed[token_id, dim] -= lr * grad
+
+    # Update output layer more aggressively (most important for predictions)
+    # Focus on columns corresponding to target tokens
+    for target in y_batch[:min(8, len(y_batch))]:
+        if target < model.vocab_size:
+            # Update this target's column in W_out
+            for i in range(0, model.d_model, 8):  # Every 8th row
+                model.W_out[i, target] += epsilon
+                loss_plus = compute_loss(model, X_batch, y_batch)
+                model.W_out[i, target] -= epsilon
+
+                grad = (loss_plus - loss) / epsilon
+                model.W_out[i, target] -= lr * grad
+
+            # Update bias for this target
+            model.b_out[target] += epsilon
             loss_plus = compute_loss(model, X_batch, y_batch)
-            model.token_embed[idx, dim] -= epsilon
+            model.b_out[target] -= epsilon
 
             grad = (loss_plus - loss) / epsilon
-            model.token_embed[idx, dim] -= lr * grad
+            model.b_out[target] -= lr * grad
 
-    # Update attention weights (small sample)
-    for matrix in [model.W_q, model.W_k, model.W_v]:
-        for _ in range(3):
-            i, j = np.random.randint(0, matrix.shape[0]), np.random.randint(0, matrix.shape[1])
-            matrix[i, j] += epsilon
-            loss_plus = compute_loss(model, X_batch, y_batch)
-            matrix[i, j] -= epsilon
-
-            grad = (loss_plus - loss) / epsilon
-            matrix[i, j] -= lr * grad
-
-    # Update FFN weights (small sample)
-    for matrix, bias in [(model.W_ff1, model.b_ff1), (model.W_ff2, model.b_ff2)]:
-        for _ in range(3):
-            i, j = np.random.randint(0, matrix.shape[0]), np.random.randint(0, matrix.shape[1])
-            matrix[i, j] += epsilon
-            loss_plus = compute_loss(model, X_batch, y_batch)
-            matrix[i, j] -= epsilon
-
-            grad = (loss_plus - loss) / epsilon
-            matrix[i, j] -= lr * grad
-
-    # Update output layer (more important)
-    for _ in range(10):
-        i, j = np.random.randint(0, model.W_out.shape[0]), np.random.randint(0, model.W_out.shape[1])
-        model.W_out[i, j] += epsilon
+    # Update FFN biases (often important)
+    for i in range(0, len(model.b_ff1), 8):
+        model.b_ff1[i] += epsilon
         loss_plus = compute_loss(model, X_batch, y_batch)
-        model.W_out[i, j] -= epsilon
+        model.b_ff1[i] -= epsilon
 
         grad = (loss_plus - loss) / epsilon
-        model.W_out[i, j] -= lr * grad
+        model.b_ff1[i] -= lr * grad
+
+    for i in range(0, len(model.b_ff2), 8):
+        model.b_ff2[i] += epsilon
+        loss_plus = compute_loss(model, X_batch, y_batch)
+        model.b_ff2[i] -= epsilon
+
+        grad = (loss_plus - loss) / epsilon
+        model.b_ff2[i] -= lr * grad
 
     return loss
 
@@ -203,7 +214,7 @@ def main():
     parser.add_argument("--data", required=True, help="Text file to train on")
     parser.add_argument("--epochs", type=int, default=10, help="Number of epochs")
     parser.add_argument("--batch-size", type=int, default=32, help="Batch size")
-    parser.add_argument("--lr", type=float, default=0.001, help="Learning rate")
+    parser.add_argument("--lr", type=float, default=0.05, help="Learning rate")
     parser.add_argument("--save", required=True, help="Output file for weights (JSON)")
     args = parser.parse_args()
 
