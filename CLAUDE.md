@@ -311,9 +311,10 @@ examples/
    - Add operation name mapping in `onnx_op_type()`
    - Add attribute handling if needed (see `create_conv2d_attributes()` example)
 
-4. **CoreML Converter** (`src/converters/coreml.rs`) *[optional]*:
+4. **CoreML Converter** (`src/converters/coreml.rs`):
    - Add layer creation (may not have direct mapping)
-   - CoreML support can be deferred for complex operations
+   - Use workarounds if no dedicated layer exists (e.g., multiply by -1 for neg)
+   - CoreML conversion is mandatory for all operations
 
 5. **Tests** (`tests/test_python_api.py`):
    - Add 3-5 tests covering:

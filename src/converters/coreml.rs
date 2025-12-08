@@ -2,15 +2,18 @@ use crate::converters::ConvertedGraph;
 use crate::error::GraphError;
 use crate::graph::{DataType, GraphInfo};
 use crate::protos::coreml::specification::{
-    ActivationParams, ActivationReLu, ActivationSigmoid, AddLayerParams, ArrayFeatureType,
-    ConvolutionLayerParams, FeatureDescription, FeatureType, InnerProductLayerParams,
-    LoadConstantLayerParams, Model, ModelDescription, NeuralNetwork, NeuralNetworkLayer,
-    PoolingLayerParams, ReduceL1LayerParams, ReduceL2LayerParams, ReduceLogSumExpLayerParams,
-    ReduceLogSumLayerParams, ReduceMaxLayerParams, ReduceMeanLayerParams, ReduceMinLayerParams,
-    ReduceProdLayerParams, ReduceSumLayerParams, ReduceSumSquareLayerParams, SoftmaxLayerParams,
-    TanhLayerParams, WeightParams, activation_params::NonlinearityType,
-    array_feature_type::ArrayDataType, feature_type, model, neural_network_layer::Layer,
-    pooling_layer_params,
+    AcosLayerParams, AcoshLayerParams, ActivationParams, ActivationReLu, ActivationSigmoid,
+    AddLayerParams, ArrayFeatureType, AsinLayerParams, AsinhLayerParams, AtanLayerParams,
+    AtanhLayerParams, CeilLayerParams, ConvolutionLayerParams, CosLayerParams, CoshLayerParams,
+    ErfLayerParams, FeatureDescription, FeatureType, FloorLayerParams, InnerProductLayerParams,
+    LoadConstantLayerParams, Model, ModelDescription, MultiplyLayerParams, NeuralNetwork,
+    NeuralNetworkLayer, PoolingLayerParams, ReduceL1LayerParams, ReduceL2LayerParams,
+    ReduceLogSumExpLayerParams, ReduceLogSumLayerParams, ReduceMaxLayerParams,
+    ReduceMeanLayerParams, ReduceMinLayerParams, ReduceProdLayerParams, ReduceSumLayerParams,
+    ReduceSumSquareLayerParams, RoundLayerParams, SignLayerParams, SinLayerParams, SinhLayerParams,
+    SoftmaxLayerParams, TanLayerParams, TanhLayerParams, UnaryFunctionLayerParams, WeightParams,
+    activation_params::NonlinearityType, array_feature_type::ArrayDataType, feature_type, model,
+    neural_network_layer::Layer, pooling_layer_params, unary_function_layer_params,
 };
 use prost::Message;
 use prost::bytes::Bytes;
@@ -806,6 +809,212 @@ impl crate::converters::GraphConverter for CoremlConverter {
                         keep_dims,
                         reduce_all,
                     })),
+                    ..Default::default()
+                }
+            // Element-wise operations - Basic math
+            } else if op.op_type.eq_ignore_ascii_case("abs") {
+                NeuralNetworkLayer {
+                    name: layer_name,
+                    input: input_names,
+                    output: output_names,
+                    layer: Some(Layer::Unary(UnaryFunctionLayerParams {
+                        r#type: unary_function_layer_params::Operation::Abs as i32,
+                        ..Default::default()
+                    })),
+                    ..Default::default()
+                }
+            } else if op.op_type.eq_ignore_ascii_case("ceil") {
+                NeuralNetworkLayer {
+                    name: layer_name,
+                    input: input_names,
+                    output: output_names,
+                    layer: Some(Layer::Ceil(CeilLayerParams {})),
+                    ..Default::default()
+                }
+            } else if op.op_type.eq_ignore_ascii_case("floor") {
+                NeuralNetworkLayer {
+                    name: layer_name,
+                    input: input_names,
+                    output: output_names,
+                    layer: Some(Layer::Floor(FloorLayerParams {})),
+                    ..Default::default()
+                }
+            } else if op.op_type.eq_ignore_ascii_case("round") {
+                NeuralNetworkLayer {
+                    name: layer_name,
+                    input: input_names,
+                    output: output_names,
+                    layer: Some(Layer::Round(RoundLayerParams {})),
+                    ..Default::default()
+                }
+            } else if op.op_type.eq_ignore_ascii_case("neg") {
+                // CoreML doesn't have a dedicated neg layer, use multiply by -1
+                NeuralNetworkLayer {
+                    name: layer_name,
+                    input: input_names,
+                    output: output_names,
+                    layer: Some(Layer::Multiply(MultiplyLayerParams { alpha: -1.0 })),
+                    ..Default::default()
+                }
+            } else if op.op_type.eq_ignore_ascii_case("sign") {
+                NeuralNetworkLayer {
+                    name: layer_name,
+                    input: input_names,
+                    output: output_names,
+                    layer: Some(Layer::Sign(SignLayerParams {})),
+                    ..Default::default()
+                }
+            // Element-wise operations - Exponential and logarithmic
+            } else if op.op_type.eq_ignore_ascii_case("exp") {
+                NeuralNetworkLayer {
+                    name: layer_name,
+                    input: input_names,
+                    output: output_names,
+                    layer: Some(Layer::Unary(UnaryFunctionLayerParams {
+                        r#type: unary_function_layer_params::Operation::Exp as i32,
+                        ..Default::default()
+                    })),
+                    ..Default::default()
+                }
+            } else if op.op_type.eq_ignore_ascii_case("log") {
+                NeuralNetworkLayer {
+                    name: layer_name,
+                    input: input_names,
+                    output: output_names,
+                    layer: Some(Layer::Unary(UnaryFunctionLayerParams {
+                        r#type: unary_function_layer_params::Operation::Log as i32,
+                        ..Default::default()
+                    })),
+                    ..Default::default()
+                }
+            } else if op.op_type.eq_ignore_ascii_case("sqrt") {
+                NeuralNetworkLayer {
+                    name: layer_name,
+                    input: input_names,
+                    output: output_names,
+                    layer: Some(Layer::Unary(UnaryFunctionLayerParams {
+                        r#type: unary_function_layer_params::Operation::Sqrt as i32,
+                        ..Default::default()
+                    })),
+                    ..Default::default()
+                }
+            } else if op.op_type.eq_ignore_ascii_case("reciprocal") {
+                NeuralNetworkLayer {
+                    name: layer_name,
+                    input: input_names,
+                    output: output_names,
+                    layer: Some(Layer::Unary(UnaryFunctionLayerParams {
+                        r#type: unary_function_layer_params::Operation::Inverse as i32,
+                        ..Default::default()
+                    })),
+                    ..Default::default()
+                }
+            // Element-wise operations - Trigonometric
+            } else if op.op_type.eq_ignore_ascii_case("sin") {
+                NeuralNetworkLayer {
+                    name: layer_name,
+                    input: input_names,
+                    output: output_names,
+                    layer: Some(Layer::Sin(SinLayerParams {})),
+                    ..Default::default()
+                }
+            } else if op.op_type.eq_ignore_ascii_case("cos") {
+                NeuralNetworkLayer {
+                    name: layer_name,
+                    input: input_names,
+                    output: output_names,
+                    layer: Some(Layer::Cos(CosLayerParams {})),
+                    ..Default::default()
+                }
+            } else if op.op_type.eq_ignore_ascii_case("tan") {
+                NeuralNetworkLayer {
+                    name: layer_name,
+                    input: input_names,
+                    output: output_names,
+                    layer: Some(Layer::Tan(TanLayerParams {})),
+                    ..Default::default()
+                }
+            } else if op.op_type.eq_ignore_ascii_case("asin") {
+                NeuralNetworkLayer {
+                    name: layer_name,
+                    input: input_names,
+                    output: output_names,
+                    layer: Some(Layer::Asin(AsinLayerParams {})),
+                    ..Default::default()
+                }
+            } else if op.op_type.eq_ignore_ascii_case("acos") {
+                NeuralNetworkLayer {
+                    name: layer_name,
+                    input: input_names,
+                    output: output_names,
+                    layer: Some(Layer::Acos(AcosLayerParams {})),
+                    ..Default::default()
+                }
+            } else if op.op_type.eq_ignore_ascii_case("atan") {
+                NeuralNetworkLayer {
+                    name: layer_name,
+                    input: input_names,
+                    output: output_names,
+                    layer: Some(Layer::Atan(AtanLayerParams {})),
+                    ..Default::default()
+                }
+            // Element-wise operations - Hyperbolic
+            } else if op.op_type.eq_ignore_ascii_case("sinh") {
+                NeuralNetworkLayer {
+                    name: layer_name,
+                    input: input_names,
+                    output: output_names,
+                    layer: Some(Layer::Sinh(SinhLayerParams {})),
+                    ..Default::default()
+                }
+            } else if op.op_type.eq_ignore_ascii_case("cosh") {
+                NeuralNetworkLayer {
+                    name: layer_name,
+                    input: input_names,
+                    output: output_names,
+                    layer: Some(Layer::Cosh(CoshLayerParams {})),
+                    ..Default::default()
+                }
+            } else if op.op_type.eq_ignore_ascii_case("asinh") {
+                NeuralNetworkLayer {
+                    name: layer_name,
+                    input: input_names,
+                    output: output_names,
+                    layer: Some(Layer::Asinh(AsinhLayerParams {})),
+                    ..Default::default()
+                }
+            } else if op.op_type.eq_ignore_ascii_case("acosh") {
+                NeuralNetworkLayer {
+                    name: layer_name,
+                    input: input_names,
+                    output: output_names,
+                    layer: Some(Layer::Acosh(AcoshLayerParams {})),
+                    ..Default::default()
+                }
+            } else if op.op_type.eq_ignore_ascii_case("atanh") {
+                NeuralNetworkLayer {
+                    name: layer_name,
+                    input: input_names,
+                    output: output_names,
+                    layer: Some(Layer::Atanh(AtanhLayerParams {})),
+                    ..Default::default()
+                }
+            // Element-wise operations - Special functions
+            } else if op.op_type.eq_ignore_ascii_case("erf") {
+                NeuralNetworkLayer {
+                    name: layer_name,
+                    input: input_names,
+                    output: output_names,
+                    layer: Some(Layer::Erf(ErfLayerParams {})),
+                    ..Default::default()
+                }
+            } else if op.op_type.eq_ignore_ascii_case("identity") {
+                // CoreML doesn't have an identity layer, use multiply by 1
+                NeuralNetworkLayer {
+                    name: layer_name,
+                    input: input_names,
+                    output: output_names,
+                    layer: Some(Layer::Multiply(MultiplyLayerParams { alpha: 1.0 })),
                     ..Default::default()
                 }
             } else {
