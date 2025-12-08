@@ -38,6 +38,8 @@ mod mil_ops {
     pub const CONV_TRANSPOSE: &str = "conv_transpose";
     pub const AVG_POOL: &str = "avg_pool";
     pub const MAX_POOL: &str = "max_pool";
+    pub const GLOBAL_AVG_POOL: &str = "reduce_mean"; // Global pooling via reduction
+    pub const GLOBAL_MAX_POOL: &str = "reduce_max"; // Global pooling via reduction
 
     // Normalization
     pub const BATCH_NORM: &str = "batch_norm";
@@ -60,6 +62,9 @@ mod mil_ops {
     pub const ABS: &str = "abs";
     pub const CEIL: &str = "ceil";
     pub const FLOOR: &str = "floor";
+    pub const ROUND: &str = "round";
+    pub const NEG: &str = "mul"; // Multiply by -1
+    pub const IDENTITY: &str = "identity";
     pub const EXP: &str = "exp";
     pub const LOG: &str = "log";
     pub const SQRT: &str = "sqrt";
@@ -67,6 +72,14 @@ mod mil_ops {
     pub const SIN: &str = "sin";
     pub const COS: &str = "cos";
     pub const TAN: &str = "tan";
+    pub const ASIN: &str = "asin";
+    pub const ACOS: &str = "acos";
+    pub const ATAN: &str = "atan";
+    pub const SINH: &str = "sinh";
+    pub const COSH: &str = "cosh";
+    pub const ASINH: &str = "asinh";
+    pub const ACOSH: &str = "acosh";
+    pub const ATANH: &str = "atanh";
     pub const ERF: &str = "erf";
     pub const RECIPROCAL: &str = "inverse";
 
@@ -222,6 +235,7 @@ impl CoremlMlProgramConverter {
             "sub" => mil_ops::SUB,
             "mul" => mil_ops::MUL,
             "div" => mil_ops::DIV,
+            "pow" => mil_ops::POW,
             "matmul" => mil_ops::MATMUL,
 
             // Activation functions
@@ -235,6 +249,8 @@ impl CoremlMlProgramConverter {
             "convtranspose2d" => mil_ops::CONV_TRANSPOSE,
             "averagepool2d" => mil_ops::AVG_POOL,
             "maxpool2d" => mil_ops::MAX_POOL,
+            "globalaveragepool" => mil_ops::GLOBAL_AVG_POOL,
+            "globalmaxpool" => mil_ops::GLOBAL_MAX_POOL,
 
             // Normalization
             "batchnormalization" => mil_ops::BATCH_NORM,
@@ -257,6 +273,9 @@ impl CoremlMlProgramConverter {
             "abs" => mil_ops::ABS,
             "ceil" => mil_ops::CEIL,
             "floor" => mil_ops::FLOOR,
+            "round" => mil_ops::ROUND,
+            "neg" => mil_ops::NEG,
+            "identity" => mil_ops::IDENTITY,
             "exp" => mil_ops::EXP,
             "log" => mil_ops::LOG,
             "sqrt" => mil_ops::SQRT,
@@ -264,6 +283,14 @@ impl CoremlMlProgramConverter {
             "sin" => mil_ops::SIN,
             "cos" => mil_ops::COS,
             "tan" => mil_ops::TAN,
+            "asin" => mil_ops::ASIN,
+            "acos" => mil_ops::ACOS,
+            "atan" => mil_ops::ATAN,
+            "sinh" => mil_ops::SINH,
+            "cosh" => mil_ops::COSH,
+            "asinh" => mil_ops::ASINH,
+            "acosh" => mil_ops::ACOSH,
+            "atanh" => mil_ops::ATANH,
             "erf" => mil_ops::ERF,
             "reciprocal" => mil_ops::RECIPROCAL,
 
@@ -307,8 +334,9 @@ impl CoremlMlProgramConverter {
 
         match op.op_type.to_lowercase().as_str() {
             // Binary operations: x, y
-            "add" | "sub" | "mul" | "div" | "matmul" | "equal" | "greater" | "greaterorequal"
-            | "lesser" | "lesserorequal" | "logicaland" | "logicalor" | "logicalxor" => {
+            "add" | "sub" | "mul" | "div" | "pow" | "matmul" | "equal" | "greater"
+            | "greaterorequal" | "lesser" | "lesserorequal" | "logicaland" | "logicalor"
+            | "logicalxor" => {
                 if input_names.len() >= 2 {
                     inputs.insert("x".to_string(), Self::create_argument(&input_names[0]));
                     inputs.insert("y".to_string(), Self::create_argument(&input_names[1]));
@@ -316,8 +344,10 @@ impl CoremlMlProgramConverter {
             }
 
             // Unary operations: x
-            "relu" | "sigmoid" | "tanh" | "softmax" | "abs" | "ceil" | "floor" | "exp" | "log"
-            | "sqrt" | "sign" | "sin" | "cos" | "tan" | "erf" | "reciprocal" | "logicalnot" => {
+            "relu" | "sigmoid" | "tanh" | "softmax" | "abs" | "ceil" | "floor" | "round"
+            | "neg" | "sign" | "identity" | "exp" | "log" | "sqrt" | "reciprocal" | "sin"
+            | "cos" | "tan" | "asin" | "acos" | "atan" | "sinh" | "cosh" | "asinh" | "acosh"
+            | "atanh" | "erf" | "logicalnot" | "globalaveragepool" | "globalmaxpool" => {
                 if !input_names.is_empty() {
                     inputs.insert("x".to_string(), Self::create_argument(&input_names[0]));
                 }
