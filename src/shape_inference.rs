@@ -788,6 +788,101 @@ pub fn infer_reduce_shape(
     Ok(output_shape)
 }
 
+/// Infer the output shape for element-wise unary operations
+/// All element-wise unary operations preserve the input shape
+
+pub fn infer_abs_shape(input_shape: &[u32]) -> Result<Vec<u32>, GraphError> {
+    Ok(input_shape.to_vec())
+}
+
+pub fn infer_ceil_shape(input_shape: &[u32]) -> Result<Vec<u32>, GraphError> {
+    Ok(input_shape.to_vec())
+}
+
+pub fn infer_floor_shape(input_shape: &[u32]) -> Result<Vec<u32>, GraphError> {
+    Ok(input_shape.to_vec())
+}
+
+pub fn infer_round_shape(input_shape: &[u32]) -> Result<Vec<u32>, GraphError> {
+    Ok(input_shape.to_vec())
+}
+
+pub fn infer_neg_shape(input_shape: &[u32]) -> Result<Vec<u32>, GraphError> {
+    Ok(input_shape.to_vec())
+}
+
+pub fn infer_sign_shape(input_shape: &[u32]) -> Result<Vec<u32>, GraphError> {
+    Ok(input_shape.to_vec())
+}
+
+pub fn infer_exp_shape(input_shape: &[u32]) -> Result<Vec<u32>, GraphError> {
+    Ok(input_shape.to_vec())
+}
+
+pub fn infer_log_shape(input_shape: &[u32]) -> Result<Vec<u32>, GraphError> {
+    Ok(input_shape.to_vec())
+}
+
+pub fn infer_sqrt_shape(input_shape: &[u32]) -> Result<Vec<u32>, GraphError> {
+    Ok(input_shape.to_vec())
+}
+
+pub fn infer_reciprocal_shape(input_shape: &[u32]) -> Result<Vec<u32>, GraphError> {
+    Ok(input_shape.to_vec())
+}
+
+pub fn infer_sin_shape(input_shape: &[u32]) -> Result<Vec<u32>, GraphError> {
+    Ok(input_shape.to_vec())
+}
+
+pub fn infer_cos_shape(input_shape: &[u32]) -> Result<Vec<u32>, GraphError> {
+    Ok(input_shape.to_vec())
+}
+
+pub fn infer_tan_shape(input_shape: &[u32]) -> Result<Vec<u32>, GraphError> {
+    Ok(input_shape.to_vec())
+}
+
+pub fn infer_asin_shape(input_shape: &[u32]) -> Result<Vec<u32>, GraphError> {
+    Ok(input_shape.to_vec())
+}
+
+pub fn infer_acos_shape(input_shape: &[u32]) -> Result<Vec<u32>, GraphError> {
+    Ok(input_shape.to_vec())
+}
+
+pub fn infer_atan_shape(input_shape: &[u32]) -> Result<Vec<u32>, GraphError> {
+    Ok(input_shape.to_vec())
+}
+
+pub fn infer_sinh_shape(input_shape: &[u32]) -> Result<Vec<u32>, GraphError> {
+    Ok(input_shape.to_vec())
+}
+
+pub fn infer_cosh_shape(input_shape: &[u32]) -> Result<Vec<u32>, GraphError> {
+    Ok(input_shape.to_vec())
+}
+
+pub fn infer_asinh_shape(input_shape: &[u32]) -> Result<Vec<u32>, GraphError> {
+    Ok(input_shape.to_vec())
+}
+
+pub fn infer_acosh_shape(input_shape: &[u32]) -> Result<Vec<u32>, GraphError> {
+    Ok(input_shape.to_vec())
+}
+
+pub fn infer_atanh_shape(input_shape: &[u32]) -> Result<Vec<u32>, GraphError> {
+    Ok(input_shape.to_vec())
+}
+
+pub fn infer_erf_shape(input_shape: &[u32]) -> Result<Vec<u32>, GraphError> {
+    Ok(input_shape.to_vec())
+}
+
+pub fn infer_identity_shape(input_shape: &[u32]) -> Result<Vec<u32>, GraphError> {
+    Ok(input_shape.to_vec())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

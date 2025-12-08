@@ -998,6 +998,131 @@ impl PyMLGraphBuilder {
         self.unary_op("softmax", x)
     }
 
+    // Element-wise operations - Basic math
+
+    /// Element-wise absolute value
+    fn abs(&mut self, x: &PyMLOperand) -> PyResult<PyMLOperand> {
+        self.unary_op("abs", x)
+    }
+
+    /// Element-wise ceiling (round up)
+    fn ceil(&mut self, x: &PyMLOperand) -> PyResult<PyMLOperand> {
+        self.unary_op("ceil", x)
+    }
+
+    /// Element-wise floor (round down)
+    fn floor(&mut self, x: &PyMLOperand) -> PyResult<PyMLOperand> {
+        self.unary_op("floor", x)
+    }
+
+    /// Element-wise rounding to nearest integer
+    fn round(&mut self, x: &PyMLOperand) -> PyResult<PyMLOperand> {
+        self.unary_op("round", x)
+    }
+
+    /// Element-wise negation
+    fn neg(&mut self, x: &PyMLOperand) -> PyResult<PyMLOperand> {
+        self.unary_op("neg", x)
+    }
+
+    /// Element-wise sign (-1, 0, 1)
+    fn sign(&mut self, x: &PyMLOperand) -> PyResult<PyMLOperand> {
+        self.unary_op("sign", x)
+    }
+
+    // Element-wise operations - Exponential and logarithmic
+
+    /// Element-wise natural exponential (e^x)
+    fn exp(&mut self, x: &PyMLOperand) -> PyResult<PyMLOperand> {
+        self.unary_op("exp", x)
+    }
+
+    /// Element-wise natural logarithm
+    fn log(&mut self, x: &PyMLOperand) -> PyResult<PyMLOperand> {
+        self.unary_op("log", x)
+    }
+
+    /// Element-wise square root
+    fn sqrt(&mut self, x: &PyMLOperand) -> PyResult<PyMLOperand> {
+        self.unary_op("sqrt", x)
+    }
+
+    /// Element-wise reciprocal (1/x)
+    fn reciprocal(&mut self, x: &PyMLOperand) -> PyResult<PyMLOperand> {
+        self.unary_op("reciprocal", x)
+    }
+
+    // Element-wise operations - Trigonometric
+
+    /// Element-wise sine
+    fn sin(&mut self, x: &PyMLOperand) -> PyResult<PyMLOperand> {
+        self.unary_op("sin", x)
+    }
+
+    /// Element-wise cosine
+    fn cos(&mut self, x: &PyMLOperand) -> PyResult<PyMLOperand> {
+        self.unary_op("cos", x)
+    }
+
+    /// Element-wise tangent
+    fn tan(&mut self, x: &PyMLOperand) -> PyResult<PyMLOperand> {
+        self.unary_op("tan", x)
+    }
+
+    /// Element-wise arcsine
+    fn asin(&mut self, x: &PyMLOperand) -> PyResult<PyMLOperand> {
+        self.unary_op("asin", x)
+    }
+
+    /// Element-wise arccosine
+    fn acos(&mut self, x: &PyMLOperand) -> PyResult<PyMLOperand> {
+        self.unary_op("acos", x)
+    }
+
+    /// Element-wise arctangent
+    fn atan(&mut self, x: &PyMLOperand) -> PyResult<PyMLOperand> {
+        self.unary_op("atan", x)
+    }
+
+    // Element-wise operations - Hyperbolic
+
+    /// Element-wise hyperbolic sine
+    fn sinh(&mut self, x: &PyMLOperand) -> PyResult<PyMLOperand> {
+        self.unary_op("sinh", x)
+    }
+
+    /// Element-wise hyperbolic cosine
+    fn cosh(&mut self, x: &PyMLOperand) -> PyResult<PyMLOperand> {
+        self.unary_op("cosh", x)
+    }
+
+    /// Element-wise hyperbolic arcsine
+    fn asinh(&mut self, x: &PyMLOperand) -> PyResult<PyMLOperand> {
+        self.unary_op("asinh", x)
+    }
+
+    /// Element-wise hyperbolic arccosine
+    fn acosh(&mut self, x: &PyMLOperand) -> PyResult<PyMLOperand> {
+        self.unary_op("acosh", x)
+    }
+
+    /// Element-wise hyperbolic arctangent
+    fn atanh(&mut self, x: &PyMLOperand) -> PyResult<PyMLOperand> {
+        self.unary_op("atanh", x)
+    }
+
+    // Element-wise operations - Special functions
+
+    /// Element-wise error function
+    fn erf(&mut self, x: &PyMLOperand) -> PyResult<PyMLOperand> {
+        self.unary_op("erf", x)
+    }
+
+    /// Identity operation (returns input unchanged)
+    fn identity(&mut self, x: &PyMLOperand) -> PyResult<PyMLOperand> {
+        self.unary_op("identity", x)
+    }
+
     /// Reshape operation
     fn reshape(&mut self, x: &PyMLOperand, new_shape: Vec<u32>) -> PyResult<PyMLOperand> {
         // Validate that reshape is possible
