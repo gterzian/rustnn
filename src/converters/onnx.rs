@@ -771,15 +771,16 @@ impl crate::converters::GraphConverter for OnnxConverter {
 
             // WORKAROUND: Logic operations output uint8 in WebNN but float32 in ONNX
             //
-            // This is a temporary workaround for onnxruntime-rs v0.0.14 limitations.
-            // The crate's API hardcodes session.run() to return Vec<OrtOwnedTensor<f32, _>>,
-            // making it impossible to read uint8 outputs correctly.
+            // We now use ort (pykeio/ort) v2.0 which supports dynamic tensor types via
+            // try_extract_tensor<T>(), so uint8 extraction is technically possible.
             //
-            // PROPER FIX: Once onnxruntime-rs supports dynamic tensor types (try_extract, etc.),
-            // this should cast to Uint8 as per WebNN spec, matching Chromium's implementation:
-            //   Cast(bool → uint8) instead of Cast(bool → float32)
+            // However, full uint8 support requires updating:
+            // - OnnxOutputWithData struct to support multiple data types (not just Vec<f32>)
+            // - Executor to extract correct type based on model output
+            // - Python bindings to handle uint8 → NumPy conversion
             //
-            // See: https://github.com/nbigaouette/onnxruntime-rs
+            // PROPER FIX (future PR): Cast(bool → uint8) matching Chromium's implementation
+            // For now, we keep the float32 workaround for simplicity.
             let mut descriptor = operand.descriptor.clone();
             if descriptor.data_type == DataType::Uint8 {
                 // Check if this output comes from a logic operation
@@ -873,7 +874,7 @@ impl crate::converters::GraphConverter for OnnxConverter {
                 });
 
                 // WORKAROUND: Cast bool → float32 (should be bool → uint8)
-                // See comment at line 446 for details on onnxruntime-rs v0.0.14 limitations
+                // See comment at line 772 for details on why we keep this workaround
                 nodes.push(Self::create_cast_node(
                     &format!("cast_to_float_{}", cast_counter),
                     bool_output_name,
@@ -901,7 +902,7 @@ impl crate::converters::GraphConverter for OnnxConverter {
                 });
 
                 // WORKAROUND: Cast bool → float32 (should be bool → uint8)
-                // See comment at line 446 for details on onnxruntime-rs v0.0.14 limitations
+                // See comment at line 772 for details on why we keep this workaround
                 nodes.push(Self::create_cast_node(
                     &format!("cast_to_float_{}", cast_counter),
                     bool_output_name,

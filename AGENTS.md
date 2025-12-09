@@ -412,7 +412,7 @@ cargo test && python -m pytest tests/      # Run all tests
 
 ### Optional Runtime Dependencies
 - **objc 0.2** - Objective-C FFI for CoreML (macOS)
-- **onnxruntime 0.0.14** - ONNX execution
+- **ort 2.0.0-rc.10** - ONNX execution (successor to onnxruntime-rs)
 - **pyo3 0.22** - Python bindings (optional, with `python` feature)
 
 ### Build Dependencies

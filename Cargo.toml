@@ -6,7 +6,7 @@ edition = "2024"
 [features]
 default = []
 coreml-runtime = ["objc"]
-onnx-runtime = ["onnxruntime"]
+onnx-runtime = ["ort", "ndarray"]
 python = ["pyo3"]
 
 [dependencies]
@@ -20,8 +20,9 @@ prost = "0.12"
 prost-types = "0.12"
 bytes = "1.6"
 bytemuck = { version = "1.15", features = ["extern_crate_std"] }
+ndarray = { version = "0.16", optional = true }
 objc = { version = "0.2", optional = true }
-onnxruntime = { version = "0.0.14", optional = true }
+ort = { version = "2.0.0-rc.10", optional = true, features = ["ndarray", "half"] }
 pyo3 = { version = "0.22", features = ["extension-module"], optional = true }
 
 [build-dependencies]

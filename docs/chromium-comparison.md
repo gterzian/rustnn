@@ -45,11 +45,11 @@ Our implementation follows Chromium's architectural patterns closely, with a few
    // WORKAROUND: Cast bool → float32 (should be bool → uint8)
    // Chromium: Cast(bool → uint8)
    // Ours: Cast(bool → float32)
-   // Reason: onnxruntime-rs v0.0.14 doesn't support Uint8 tensor extraction
+   // Reason: Simplified implementation; ort v2.0 supports uint8 but requires multi-type output handling
    ```
    - **Status**: ✅ Documented limitation, not a design flaw
    - **Impact**: ⚠️ Functional but semantically incorrect type
-   - **Fix**: Requires onnxruntime-rs update to support `try_extract::<u8>`
+   - **Fix**: Now possible with ort v2.0 - requires multi-type output pipeline (future PR)
 
 2. **Conv Transpose Output Padding**:
    - **Chromium**: Explicitly calculates output padding

@@ -497,13 +497,14 @@ Last Updated: 2025-12-08
 - Python API: Added 9 methods to MLGraphBuilder (src/python/graph_builder.rs)
 - ONNX conversion: Automatic Cast node insertion for type conversions (src/converters/onnx.rs:446-580)
   - **WORKAROUND**: Currently casts bool → float32 (should be bool → uint8)
-  - Reason: onnxruntime-rs v0.0.14 API hardcodes session.run() to return Vec<OrtOwnedTensor<f32, _>>
-  - Cannot read uint8 tensors with current API (no try_extract, no dynamic types)
-  - Chromium correctly uses bool → uint8, but has dynamic type support
-  - **PROPER FIX**: Upgrade onnxruntime-rs when newer version supports dynamic tensor types
-    - Project: https://github.com/nbigaouette/onnxruntime-rs
-    - Need: try_extract() method or similar for type-safe extraction
-    - Then change: Cast(bool → float32) to Cast(bool → uint8)
+  - Migrated to ort v2.0.0-rc.10 (from onnxruntime-rs v0.0.14) - supports dynamic types via try_extract_tensor<T>()
+  - Full uint8 support now technically possible but requires additional changes:
+    - Update OnnxOutputWithData struct to support multiple data types (not just Vec<f32>)
+    - Update executor to extract correct type based on model output
+    - Update Python bindings to handle uint8 → NumPy conversion
+  - Chromium correctly uses bool → uint8, we keep float32 workaround for simplicity
+  - **PROPER FIX** (future PR): Implement full uint8 output pipeline
+    - Change: Cast(bool → float32) to Cast(bool → uint8)
     - Update output ValueInfo types from Float32 back to Uint8
   - Comparison ops: Execute op (outputs bool) → Cast(bool→float32)  [TEMP]
   - Logical ops: Cast(inputs→bool) → Execute op → Cast(bool→float32)  [TEMP]
