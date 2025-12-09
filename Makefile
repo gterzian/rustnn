@@ -145,6 +145,12 @@ python-example: python-dev
 	fi
 
 mobilenet-demo: python-dev
+	@echo "Installing demo dependencies..."
+	@if [ -f .venv-webnn/bin/python ]; then \
+		.venv-webnn/bin/pip install -q Pillow requests; \
+	else \
+		pip install -q Pillow requests; \
+	fi
 	@echo "========================================================================"
 	@echo "Running MobileNetV2 Image Classifier on All Backends"
 	@echo "========================================================================"
