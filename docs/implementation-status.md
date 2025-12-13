@@ -4,234 +4,156 @@
 
 ## Executive Summary
 
-rustnn implements 85 of ~95 WebNN operations (89% coverage) with full backend support across ONNX Runtime, CoreML MLProgram, and TensorRT. WPT test infrastructure exists but test data conversion is incomplete.
+rustnn implements 85 of ~95 WebNN operations (89% coverage) with full backend support across ONNX Runtime, CoreML MLProgram, and TensorRT.
 
 **Current Status:**
-- [OK] 85 operations fully implemented (Shape Inference + Python API + ONNX + CoreML)
-- [OK] WPT test infrastructure in place
-- [WARNING] WPT test data files empty - conversion from JavaScript incomplete
-- [WARNING] 260 Python API tests exist but skipped (runtime dependencies)
+- ✓ 85 operations fully implemented (Shape Inference + Python API + ONNX + CoreML)
+- ✓ WPT test infrastructure in place
+- ✓ WPT test data converter working (Node.js-based extraction)
+- ⚠ WPT test data population incomplete (1/54 conformance files converted)
+- ⚠ 260 Python API tests exist but skipped (runtime dependencies)
 
 ---
 
-## Implementation Status by Operation Category
+## Implementation Status
 
 **Legend:**
-- [OK] = Fully implemented across all backends
-- [PAUSE] = Partially implemented
--  = Not implemented
+- ✓ = Fully implemented
+- ⚠ = Partially implemented
+- ✗ = Not implemented
 - ⏭ = Intentionally deferred
 
-### Binary Operations (6/6 - 100%)
+### All Operations (Alphabetically Sorted)
 
-| Operation | Shape Inference | Python API | ONNX | CoreML | WPT Data |
-|-----------|-----------------|------------|------|--------|----------|
-| `add` | [OK] | [OK] | [OK] | [OK] | [WARNING] Empty |
-| `sub` | [OK] | [OK] | [OK] | [OK] | [WARNING] Empty |
-| `mul` | [OK] | [OK] | [OK] | [OK] | [WARNING] Empty |
-| `div` | [OK] | [OK] | [OK] | [OK] | [WARNING] Empty |
-| `matmul` | [OK] | [OK] | [OK] | [OK] | [WARNING] Empty |
-| `pow` | [OK] | [OK] | [OK] | [OK] | [WARNING] Empty |
+| Operation | Shape | Python | ONNX | CoreML | WPT |
+|-----------|:-----:|:------:|:----:|:------:|:---:|
+| `abs` | ✓ | ✓ | ✓ | ✓ | ⚠ |
+| `acos` | ✓ | ✓ | ✓ | ✓ | - |
+| `acosh` | ✓ | ✓ | ✓ | ✓ | - |
+| `add` | ✓ | ✓ | ✓ | ✓ | ⚠ |
+| `argMax` | ✓ | ✓ | ✓ | ✓ | - |
+| `argMin` | ✓ | ✓ | ✓ | ✓ | - |
+| `asin` | ✓ | ✓ | ✓ | ✓ | - |
+| `asinh` | ✓ | ✓ | ✓ | ✓ | - |
+| `atan` | ✓ | ✓ | ✓ | ✓ | - |
+| `atanh` | ✓ | ✓ | ✓ | ✓ | - |
+| `average_pool2d` | ✓ | ✓ | ✓ | ✓ | - |
+| `batch_normalization` | ✓ | ✓ | ✓ | ✓ | ⚠ |
+| `cast` | ✓ | ✓ | ✓ | ✓ | ⚠ |
+| `ceil` | ✓ | ✓ | ✓ | ✓ | ⚠ |
+| `concat` | ✓ | ✓ | ✓ | ✓ | ⚠ |
+| `conv2d` | ✓ | ✓ | ✓ | ✓ | ⚠ |
+| `conv_transpose2d` | ✓ | ✓ | ✓ | ✓ | ⚠ |
+| `cos` | ✓ | ✓ | ✓ | ✓ | - |
+| `cosh` | ✓ | ✓ | ✓ | ✓ | - |
+| `dequantize_linear` | ✓ | ✓ | ✓ | ✓ | - |
+| `div` | ✓ | ✓ | ✓ | ✓ | ⚠ |
+| `elu` | ✓ | ✓ | ✓ | ✓ | ⚠ |
+| `equal` | ✓ | ✓ | ✓ | ✓ | ⚠ |
+| `erf` | ✓ | ✓ | ✓ | ✓ | - |
+| `exp` | ✓ | ✓ | ✓ | ✓ | ⚠ |
+| `expand` | ✓ | ✓ | ✓ | ✓ | ⚠ |
+| `floor` | ✓ | ✓ | ✓ | ✓ | ⚠ |
+| `gather` | ✓ | ✓ | ✓ | ✓ | ⚠ |
+| `gelu` | ✓ | ✓ | ✓ | ✓ | - |
+| `global_average_pool` | ✓ | ✓ | ✓ | ✓ | - |
+| `global_max_pool` | ✓ | ✓ | ✓ | ✓ | - |
+| `greater` | ✓ | ✓ | ✓ | ✓ | ⚠ |
+| `greater_or_equal` | ✓ | ✓ | ✓ | ✓ | ⚠ |
+| `gru` | ⏭ | ⏭ | ⏭ | ⏭ | - |
+| `gruCell` | ⏭ | ⏭ | ⏭ | ⏭ | - |
+| `hardSigmoid` | ✓ | ✓ | ✓ | ✓ | ⚠ |
+| `hardSwish` | ✓ | ✓ | ✓ | ✓ | ⚠ |
+| `identity` | ✓ | ✓ | ✓ | ✓ | - |
+| `instance_normalization` | ✓ | ✓ | ✓ | ✓ | ⚠ |
+| `layer_normalization` | ✓ | ✓ | ✓ | ✓ | ⚠ |
+| `leakyRelu` | ✓ | ✓ | ✓ | ✓ | ⚠ |
+| `lesser` | ✓ | ✓ | ✓ | ✓ | ⚠ |
+| `lesser_or_equal` | ✓ | ✓ | ✓ | ✓ | ⚠ |
+| `log` | ✓ | ✓ | ✓ | ✓ | ⚠ |
+| `logical_and` | ✓ | ✓ | ✓ | ✓ | - |
+| `logical_not` | ✓ | ✓ | ✓ | ✓ | ⚠ |
+| `logical_or` | ✓ | ✓ | ✓ | ✓ | - |
+| `logical_xor` | ✓ | ✓ | ✓ | ✓ | - |
+| `lstm` | ⏭ | ⏭ | ⏭ | ⏭ | - |
+| `lstmCell` | ⏭ | ⏭ | ⏭ | ⏭ | - |
+| `matmul` | ✓ | ✓ | ✓ | ✓ | ⚠ |
+| `max_pool2d` | ✓ | ✓ | ✓ | ✓ | - |
+| `mul` | ✓ | ✓ | ✓ | ✓ | ⚠ |
+| `neg` | ✓ | ✓ | ✓ | ✓ | ⚠ |
+| `pad` | ✓ | ✓ | ✓ | ✓ | - |
+| `pow` | ✓ | ✓ | ✓ | ✓ | ⚠ |
+| `prelu` | ✓ | ✓ | ✓ | ✓ | - |
+| `quantize_linear` | ✓ | ✓ | ✓ | ✓ | - |
+| `reciprocal` | ✓ | ✓ | ✓ | ✓ | - |
+| `reduce_l1` | ✓ | ✓ | ✓ | ✓ | ⚠ |
+| `reduce_l2` | ✓ | ✓ | ✓ | ✓ | ⚠ |
+| `reduce_log_sum` | ✓ | ✓ | ✓ | ✓ | ⚠ |
+| `reduce_log_sum_exp` | ✓ | ✓ | ✓ | ✓ | ⚠ |
+| `reduce_max` | ✓ | ✓ | ✓ | ✓ | ⚠ |
+| `reduce_mean` | ✓ | ✓ | ✓ | ✓ | ⚠ |
+| `reduce_min` | ✓ | ✓ | ✓ | ✓ | ⚠ |
+| `reduce_product` | ✓ | ✓ | ✓ | ✓ | ⚠ |
+| `reduce_sum` | ✓ | ✓ | ✓ | ✓ | ⚠ |
+| `reduce_sum_square` | ✓ | ✓ | ✓ | ✓ | ⚠ |
+| `relu` | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `reshape` | ✓ | ✓ | ✓ | ✓ | ⚠ |
+| `round` | ✓ | ✓ | ✓ | ✓ | - |
+| `scatterElements` | ✓ | ✓ | ✓ | ✓ | - |
+| `scatterND` | ✓ | ✓ | ✓ | ✓ | - |
+| `sigmoid` | ✓ | ✓ | ✓ | ✓ | ⚠ |
+| `sign` | ✓ | ✓ | ✓ | ✓ | - |
+| `sin` | ✓ | ✓ | ✓ | ✓ | - |
+| `sinh` | ✓ | ✓ | ✓ | ✓ | - |
+| `slice` | ✓ | ✓ | ✓ | ✓ | ⚠ |
+| `softmax` | ✓ | ✓ | ✓ | ✓ | ⚠ |
+| `softplus` | ✓ | ✓ | ✓ | ✓ | - |
+| `softsign` | ✓ | ✓ | ✓ | ✓ | - |
+| `split` | ✓ | ✓ | ✓ | ✓ | ⚠ |
+| `sqrt` | ✓ | ✓ | ✓ | ✓ | ⚠ |
+| `squeeze` | ✓ | ✓ | ✓ | ✓ | - |
+| `sub` | ✓ | ✓ | ✓ | ✓ | ⚠ |
+| `tan` | ✓ | ✓ | ✓ | ✓ | - |
+| `tanh` | ✓ | ✓ | ✓ | ✓ | ⚠ |
+| `tile` | ✓ | ✓ | ✓ | ✓ | - |
+| `transpose` | ✓ | ✓ | ✓ | ✓ | ⚠ |
+| `triangular` | ✓ | ✓ | ✓ | ✓ | - |
+| `unsqueeze` | ✓ | ✓ | ✓ | ✓ | - |
+| `where` | ✓ | ✓ | ✓ | ✓ | - |
 
-### Activation Functions (4/4 - 100%)
+**WPT Data Status:**
+- ✓ = Test data populated (17 test cases)
+- ⚠ = Test data file exists but empty
+- `-` = No WPT test file found
 
-| Operation | Shape Inference | Python API | ONNX | CoreML | WPT Data |
-|-----------|-----------------|------------|------|--------|----------|
-| `relu` | [OK] | [OK] | [OK] | [OK] | [WARNING] Empty |
-| `sigmoid` | [OK] | [OK] | [OK] | [OK] | [WARNING] Empty |
-| `tanh` | [OK] | [OK] | [OK] | [OK] | [WARNING] Empty |
-| `softmax` | [OK] | [OK] | [OK] | [OK] | [WARNING] Empty |
+### Deferred Operations
 
-### Specialized Activations (7/7 - 100%)
-
-| Operation | Shape Inference | Python API | ONNX | CoreML | WPT Data |
-|-----------|-----------------|------------|------|--------|----------|
-| `prelu` | [OK] | [OK] | [OK] | [OK] | Status unknown |
-| `elu` | [OK] | [OK] | [OK] | [OK] | [WARNING] Empty |
-| `leakyRelu` | [OK] | [OK] | [OK] | [OK] | [WARNING] Empty |
-| `hardSigmoid` | [OK] | [OK] | [OK] | [OK] | [WARNING] Empty |
-| `hardSwish` | [OK] | [OK] | [OK] | [OK] | [WARNING] Empty |
-| `softplus` | [OK] | [OK] | [OK] | [OK] | Status unknown |
-| `softsign` | [OK] | [OK] | [OK] | [OK] | Status unknown |
-
-### Element-wise Math (11/11 - 100%)
-
-| Operation | Shape Inference | Python API | ONNX | CoreML | WPT Data |
-|-----------|-----------------|------------|------|--------|----------|
-| `abs` | [OK] | [OK] | [OK] | [OK] | [WARNING] Empty |
-| `ceil` | [OK] | [OK] | [OK] | [OK] | [WARNING] Empty |
-| `floor` | [OK] | [OK] | [OK] | [OK] | [WARNING] Empty |
-| `round` | [OK] | [OK] | [OK] | [OK] | Status unknown |
-| `neg` | [OK] | [OK] | [OK] | [OK] | [WARNING] Empty |
-| `sign` | [OK] | [OK] | [OK] | [OK] | Status unknown |
-| `exp` | [OK] | [OK] | [OK] | [OK] | [WARNING] Empty |
-| `log` | [OK] | [OK] | [OK] | [OK] | [WARNING] Empty |
-| `sqrt` | [OK] | [OK] | [OK] | [OK] | [WARNING] Empty |
-| `reciprocal` | [OK] | [OK] | [OK] | [OK] | Status unknown |
-| `identity` | [OK] | [OK] | [OK] | [OK] | Status unknown |
-
-### Trigonometric (6/6 - 100%)
-
-| Operation | Shape Inference | Python API | ONNX | CoreML | WPT Data |
-|-----------|-----------------|------------|------|--------|----------|
-| `sin` | [OK] | [OK] | [OK] | [OK] | Status unknown |
-| `cos` | [OK] | [OK] | [OK] | [OK] | Status unknown |
-| `tan` | [OK] | [OK] | [OK] | [OK] | Status unknown |
-| `asin` | [OK] | [OK] | [OK] | [OK] | Status unknown |
-| `acos` | [OK] | [OK] | [OK] | [OK] | Status unknown |
-| `atan` | [OK] | [OK] | [OK] | [OK] | Status unknown |
-
-### Hyperbolic (5/5 - 100%)
-
-| Operation | Shape Inference | Python API | ONNX | CoreML | WPT Data |
-|-----------|-----------------|------------|------|--------|----------|
-| `sinh` | [OK] | [OK] | [OK] | [OK] | Status unknown |
-| `cosh` | [OK] | [OK] | [OK] | [OK] | Status unknown |
-| `asinh` | [OK] | [OK] | [OK] | [OK] | Status unknown |
-| `acosh` | [OK] | [OK] | [OK] | [OK] | Status unknown |
-| `atanh` | [OK] | [OK] | [OK] | [OK] | Status unknown |
-
-### Special Functions (1/1 - 100%)
-
-| Operation | Shape Inference | Python API | ONNX | CoreML | WPT Data |
-|-----------|-----------------|------------|------|--------|----------|
-| `erf` | [OK] | [OK] | [OK] | [OK] | Status unknown |
-
-### Logic Operations (9/9 - 100%)
-
-| Operation | Shape Inference | Python API | ONNX | CoreML | WPT Data |
-|-----------|-----------------|------------|------|--------|----------|
-| `equal` | [OK] | [OK] | [OK] | [OK] | [WARNING] Empty |
-| `greater` | [OK] | [OK] | [OK] | [OK] | [WARNING] Empty |
-| `greater_or_equal` | [OK] | [OK] | [OK] | [OK] | [WARNING] Empty |
-| `lesser` | [OK] | [OK] | [OK] | [OK] | [WARNING] Empty |
-| `lesser_or_equal` | [OK] | [OK] | [OK] | [OK] | [WARNING] Empty |
-| `logical_not` | [OK] | [OK] | [OK] | [OK] | [WARNING] Empty |
-| `logical_and` | [OK] | [OK] | [OK] | [OK] | Status unknown |
-| `logical_or` | [OK] | [OK] | [OK] | [OK] | Status unknown |
-| `logical_xor` | [OK] | [OK] | [OK] | [OK] | Status unknown |
-
-### Convolution (2/2 - 100%)
-
-| Operation | Shape Inference | Python API | ONNX | CoreML | WPT Data |
-|-----------|-----------------|------------|------|--------|----------|
-| `conv2d` | [OK] | [OK] | [OK] | [OK] | [WARNING] Empty |
-| `conv_transpose2d` | [OK] | [OK] | [OK] | [OK] | [WARNING] Empty |
-
-### Pooling (4/4 - 100%)
-
-| Operation | Shape Inference | Python API | ONNX | CoreML | WPT Data |
-|-----------|-----------------|------------|------|--------|----------|
-| `average_pool2d` | [OK] | [OK] | [OK] | [OK] | Status unknown |
-| `max_pool2d` | [OK] | [OK] | [OK] | [OK] | Status unknown |
-| `global_average_pool` | [OK] | [OK] | [OK] | [OK] | Status unknown |
-| `global_max_pool` | [OK] | [OK] | [OK] | [OK] | Status unknown |
-
-### Normalization (3/3 - 100%)
-
-| Operation | Shape Inference | Python API | ONNX | CoreML | WPT Data |
-|-----------|-----------------|------------|------|--------|----------|
-| `batch_normalization` | [OK] | [OK] | [OK] | [OK] | [WARNING] Empty |
-| `instance_normalization` | [OK] | [OK] | [OK] | [OK] | [WARNING] Empty |
-| `layer_normalization` | [OK] | [OK] | [OK] | [OK] | [WARNING] Empty |
-
-### Reduction (10/10 - 100%)
-
-| Operation | Shape Inference | Python API | ONNX | CoreML | WPT Data |
-|-----------|-----------------|------------|------|--------|----------|
-| `reduce_sum` | [OK] | [OK] | [OK] | [OK] | [WARNING] Empty |
-| `reduce_mean` | [OK] | [OK] | [OK] | [OK] | [WARNING] Empty |
-| `reduce_max` | [OK] | [OK] | [OK] | [OK] | [WARNING] Empty |
-| `reduce_min` | [OK] | [OK] | [OK] | [OK] | [WARNING] Empty |
-| `reduce_product` | [OK] | [OK] | [OK] | [OK] | [WARNING] Empty |
-| `reduce_l1` | [OK] | [OK] | [OK] | [OK] | [WARNING] Empty |
-| `reduce_l2` | [OK] | [OK] | [OK] | [OK] | [WARNING] Empty |
-| `reduce_log_sum` | [OK] | [OK] | [OK] | [OK] | [WARNING] Empty |
-| `reduce_log_sum_exp` | [OK] | [OK] | [OK] | [OK] | [WARNING] Empty |
-| `reduce_sum_square` | [OK] | [OK] | [OK] | [OK] | [WARNING] Empty |
-
-### Quantization (2/2 - 100%)
-
-| Operation | Shape Inference | Python API | ONNX | CoreML | WPT Data |
-|-----------|-----------------|------------|------|--------|----------|
-| `dequantize_linear` | [OK] | [OK] | [OK] | [OK] | Status unknown |
-| `quantize_linear` | [OK] | [OK] | [OK] | [OK] | Status unknown |
-
-### Shape Operations (1/1 - 100%)
-
-| Operation | Shape Inference | Python API | ONNX | CoreML | WPT Data |
-|-----------|-----------------|------------|------|--------|----------|
-| `reshape` | [OK] | [OK] | [OK] | [OK] | [WARNING] Empty |
-
-### Tensor Manipulation (8/8 - 100%)
-
-| Operation | Shape Inference | Python API | ONNX | CoreML | WPT Data |
-|-----------|-----------------|------------|------|--------|----------|
-| `transpose` | [OK] | [OK] | [OK] | [OK] | [WARNING] Empty |
-| `concat` | [OK] | [OK] | [OK] | [OK] | [WARNING] Empty |
-| `slice` | [OK] | [OK] | [OK] | [OK] | [WARNING] Empty |
-| `expand` | [OK] | [OK] | [OK] | [OK] | [WARNING] Empty |
-| `gather` | [OK] | [OK] | [OK] | [OK] | [WARNING] Empty |
-| `split` | [OK] | [OK] | [OK] | [OK] | [WARNING] Empty |
-| `where` | [OK] | [OK] | [OK] | [OK] | Status unknown |
-| `pad` | [OK] | [OK] | [OK] | [OK] | Status unknown |
-
-### Advanced Architecture Operations (6/6 - 100%)
-
-| Operation | Shape Inference | Python API | ONNX | CoreML | WPT Data |
-|-----------|-----------------|------------|------|--------|----------|
-| `gelu` | [OK] | [OK] | [OK] | [OK] | Status unknown |
-| `squeeze` | [OK] | [OK] | [OK] | [OK] | Status unknown |
-| `unsqueeze` | [OK] | [OK] | [OK] | [OK] | Status unknown |
-| `argMax` | [OK] | [OK] | [OK] | [OK] | Status unknown |
-| `argMin` | [OK] | [OK] | [OK] | [OK] | Status unknown |
-| `cast` | [OK] | [OK] | [OK] | [OK] | [WARNING] Empty |
-
-### Additional Features (4/4 - 100%)
-
-| Operation | Shape Inference | Python API | ONNX | CoreML | WPT Data |
-|-----------|-----------------|------------|------|--------|----------|
-| `scatterElements` | [OK] | [OK] | [OK] | [OK] | Status unknown |
-| `scatterND` | [OK] | [OK] | [OK] | [OK] | Status unknown |
-| `tile` | [OK] | [OK] | [OK] | [OK] | Status unknown |
-| `triangular` | [OK] | [OK] | [OK] | [OK] | Status unknown |
-
-### Deferred Operations (4 operations)
-
-| Operation | Status | Rationale |
-|-----------|--------|-----------|
-| `lstm` | ⏭ Deferred | Complex RNN operation; Transformers more common; spec under review |
-| `lstmCell` | ⏭ Deferred | Complex RNN operation; lower priority |
-| `gru` | ⏭ Deferred | Complex RNN operation; Transformers more common |
-| `gruCell` | ⏭ Deferred | Complex RNN operation; lower priority |
-
-**Deferral Rationale:** Each operation requires 10-15 parameters with complex shape inference (~2000-3000 LOC total). Active [W3C discussion](https://github.com/webmachinelearning/webnn/issues/453) about removing these in favor of lower-level primitives. Modern ML trends favor Transformer architectures over LSTM/GRU.
+**Rationale:** Each RNN operation requires 10-15 parameters with complex shape inference (~2000-3000 LOC total). Active [W3C discussion](https://github.com/webmachinelearning/webnn/issues/453) about removing these in favor of lower-level primitives. Modern ML trends favor Transformer architectures over LSTM/GRU.
 
 ---
 
 ## Summary Statistics
 
 ```
-WebNN Spec (CR Draft Dec 2025):  ~95 total operations
-Core Operations:                  68/68 (100%) [OK]
-Specialized Activations:           7/7  (100%) [OK]
-Advanced Architecture Ops:         6/6  (100%) [OK]
-Additional Features:               4/4  (100%) [OK]
-Total Implemented:                85/95 (89%) [OK]
-Deferred Operations:               4     (RNN operations)
-Remaining Operations:             ~6     (specialized activations)
+WebNN Specification Coverage:
+  Total Operations in Spec:      ~95
+  Fully Implemented:              85 (89%)
+  Deferred (RNN):                  4 (lstm, lstmCell, gru, gruCell)
+  Remaining:                      ~6 (specialized activations)
 
-Backend Coverage:
-Shape Inference:                  85/85 (100%) [OK]
-Python API:                       85/85 (100%) [OK]
-ONNX Backend:                     85/85 (100%) [OK]
-CoreML MLProgram:                 85/85 (100%) [OK]
+Implementation Status:
+  Shape Inference:                85/85 ✓ (100%)
+  Python API:                     85/85 ✓ (100%)
+  ONNX Backend:                   85/85 ✓ (100%)
+  CoreML MLProgram:               85/85 ✓ (100%)
 
 Test Coverage:
-Python API Tests:                 260 tests (all skipped - runtime deps)
-WPT Test Infrastructure:          [OK] Complete
-WPT Test Data Files:              54 conformance + 17 validation
-WPT Test Data Populated:          [WARNING] 0/71 (test data empty)
+  Python API Tests:               260 tests (skipped - runtime deps)
+  WPT Test Infrastructure:        ✓ Complete (converter + runner)
+  WPT Conformance Files:          54 operations
+  WPT Validation Files:           17 operations
+  WPT Data Populated:             1/71 ✓ (relu with 17 test cases)
+  WPT Data Pending:               70/71 (files exist but empty)
 ```
 
 ---
@@ -240,77 +162,87 @@ WPT Test Data Populated:          [WARNING] 0/71 (test data empty)
 
 ### What Exists
 
-[OK] **Infrastructure:**
+✓ **Infrastructure:**
 - `tests/wpt_data/` directory with conformance/ and validation/ subdirectories
 - `tests/test_wpt_conformance.py` - Test runner framework
 - `tests/wpt_utils.py` - ULP distance calculation, tolerance checking
-- `scripts/convert_wpt_tests.py` - Test data converter
+- `scripts/convert_wpt_tests.py` - Python converter
+- `scripts/extract_wpt_tests.js` - Node.js extraction script (NEW)
 - `scripts/update_wpt_tests.sh` - Update automation script
 
-[OK] **Test Data Files:**
+✓ **Test Data Files:**
 - 54 conformance test JSON files created
 - 17 validation test JSON files created
 - Files include metadata: operation name, WPT version, commit SHA, source file
 
-[WARNING] **Critical Gap:**
-- All test data files have empty "tests": [] arrays
-- Test data conversion from WPT JavaScript to JSON incomplete
-- 0 actual test cases available despite infrastructure
+✓ **Test Data Converter:**
+- Node.js-based JavaScript parser working
+- Successfully extracts test arrays from WPT files
+- Validated with relu operation (17 test cases)
 
-### Why WPT Tests Are Skipped
+⚠ **Current Gap:**
+- 1/54 conformance files populated (relu)
+- 0/17 validation files populated
+- Remaining files have empty "tests": [] arrays
+- Need to download/clone full WPT repository for bulk conversion
 
-Current test run shows: `54 skipped in 0.02s`
+### Test Status
 
-**Root Cause:** Test data files exist but contain no test cases:
-```json
-{
-  "operation": "relu",
-  "wpt_version": "2025-12-08",
-  "wpt_commit": "25b26d4cfd4e1ca1b288849c03fa58ee7b049ef1",
-  "source_file": "webnn/conformance_tests/relu.https.any.js",
-  "tests": []  # <-- Empty!
-}
-```
+**Before Converter Fix:**
+- pytest shows: `54 skipped` with "no_tests" reason
+- All test data files had empty "tests": [] arrays
+
+**After Converter Fix (2025-12-13):**
+- pytest shows: `18 collected` for relu (17 test cases + 1 leaky_relu still empty)
+- relu.json now has 17 valid test cases covering float32, float16, int8, int32, int64
+- Tests properly parameterized but skipped due to missing ONNX Runtime (expected)
 
 ---
 
 ## Next Steps (Prioritized)
 
-### Priority 1: Complete WPT Test Data Conversion (HIGH IMPACT)
+### Priority 1: Complete WPT Test Data Conversion (IN PROGRESS)
 
-**Goal:** Populate WPT test data files with actual test cases from upstream WPT repository
+**Goal:** Populate remaining WPT test data files with actual test cases from upstream WPT repository
 
-**Current Blocker:** `scripts/convert_wpt_tests.py` exists but hasn't successfully converted test cases from JavaScript to JSON format.
+**Status:** ✓ Converter working, 1/54 files converted
 
-**Action Items:**
-1. **Fix test data converter** (`scripts/convert_wpt_tests.py`)
-   - Debug why conversion produces empty test arrays
-   - Verify JavaScript parsing logic handles WPT test format
-   - Test with 2-3 simple operations first (relu, add, reshape)
-   - Expected output: JSON files with populated "tests" arrays
+**Remaining Tasks:**
 
-2. **Convert high-priority operations** (Tier 1 - 29 ops)
-   - Binary: add, sub, mul, div, matmul, pow
-   - Activations: relu, sigmoid, tanh, softmax
-   - Reductions: all 10 reduce operations
-   - Pooling: averagePool2d, maxPool2d, globalAveragePool, globalMaxPool
-   - Convolution: conv2d, convTranspose2d
-   - Normalization: batchNormalization, instanceNormalization, layerNormalization
-   - Shape: reshape
-
-3. **Verify test execution**
+1. **Clone WPT repository**
    ```bash
-   pytest tests/test_wpt_conformance.py -k "relu" -v
+   git clone https://github.com/web-platform-tests/wpt.git ~/wpt
    ```
-   - Should see actual test cases running (not skipped)
-   - Fix any tolerance or execution issues
+
+2. **Convert Tier 1 operations** (28 remaining)
+   ```bash
+   python scripts/convert_wpt_tests.py \
+     --wpt-repo ~/wpt \
+     --operations add,sub,mul,div,matmul,pow,sigmoid,tanh,softmax,reduce_sum,reduce_mean \
+     --output tests/wpt_data
+   ```
+
+   Priority operations:
+   - Binary: add, sub, mul, div, matmul, pow (6)
+   - Activations: sigmoid, tanh, softmax (3)
+   - Reductions: reduce_sum, reduce_mean, reduce_max, reduce_min, reduce_product, reduce_l1, reduce_l2, reduce_log_sum, reduce_log_sum_exp, reduce_sum_square (10)
+   - Pooling: average_pool2d, max_pool2d (2)
+   - Convolution: conv2d, conv_transpose2d (2)
+   - Normalization: batch_normalization, instance_normalization, layer_normalization (3)
+   - Shape: reshape (1)
+
+3. **Verify converted test data**
+   ```bash
+   pytest tests/test_wpt_conformance.py --collect-only
+   ```
+   - Should show 100+ test cases collected
 
 **Expected Outcome:**
-- 100+ WPT conformance tests passing
-- Numerical correctness validated against official W3C test suite
-- CI pipeline running WPT tests on every PR
+- 29/54 conformance files populated with test data
+- 100-200 test cases ready for execution
+- Tests skipped only due to runtime dependencies (ONNX Runtime, CoreML)
 
-**Estimated Effort:** 1-2 days
+**Estimated Effort:** 2-3 hours (mostly download/conversion time)
 
 ---
 
@@ -457,6 +389,11 @@ make python-test
 
 ## Revision History
 
+- **2025-12-13:**
+  - Reorganized into single alphabetically sorted table with simple check icons (✓)
+  - Fixed WPT test data converter with Node.js-based extraction
+  - Successfully converted relu operation (17 test cases)
+  - Updated status: converter working, 1/54 files populated
 - **2025-12-13:** Merged operator-status.md and wpt-integration-plan.md; identified WPT test data gap as critical blocker
 - **2025-12-08:** 85 operations fully implemented; CoreML end-to-end execution verified
 - **2025-12-07:** WPT test infrastructure created; test data files initialized (empty)
