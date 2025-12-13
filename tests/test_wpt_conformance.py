@@ -72,15 +72,19 @@ def execute_wpt_test_case(context, test_case: Dict[str, Any]) -> Dict[str, np.nd
     # Create operands dictionary to track created operands by name
     operands: Dict[str, Any] = {}
 
+    # Extract graph description from test case
+    graph_desc = test_case.get("graph", {})
+
     # Step 1: Create input operands
-    inputs_data = test_case.get("inputs", {})
+    inputs_data = graph_desc.get("inputs", {})
     for input_name, input_spec in inputs_data.items():
-        shape = input_spec["shape"]
-        dtype = input_spec.get("dataType", "float32")
+        descriptor = input_spec.get("descriptor", input_spec)
+        shape = descriptor["shape"]
+        dtype = descriptor.get("dataType", "float32")
         operands[input_name] = builder.input(input_name, shape, dtype)
 
     # Step 2: Execute operators in order
-    operators = test_case.get("operators", [])
+    operators = graph_desc.get("operators", [])
     for op_spec in operators:
         op_name = op_spec["name"]
         op_args = op_spec.get("arguments", {})
@@ -103,7 +107,7 @@ def execute_wpt_test_case(context, test_case: Dict[str, Any]) -> Dict[str, np.nd
         operands[op_output] = result
 
     # Step 3: Build graph with outputs
-    expected_outputs = test_case.get("expectedOutputs", {})
+    expected_outputs = graph_desc.get("expectedOutputs", {})
     graph_outputs = {}
     for output_name in expected_outputs.keys():
         if output_name in operands:
@@ -115,9 +119,22 @@ def execute_wpt_test_case(context, test_case: Dict[str, Any]) -> Dict[str, np.nd
     # Build the graph
     graph = builder.build(graph_outputs)
 
-    # Note: Actual compute() execution is not implemented yet
-    # For now, we just validate that the graph builds successfully
-    return {}
+    # Step 4: Prepare input data for compute()
+    compute_inputs = {}
+    for input_name, input_spec in inputs_data.items():
+        input_array = wpt_utils.numpy_array_from_test_data(input_spec)
+        compute_inputs[input_name] = input_array
+
+    # Step 5: Execute graph with compute()
+    compute_results = context.compute(graph, compute_inputs)
+
+    # Step 6: Convert results to NumPy arrays
+    results = {}
+    for output_name in graph_outputs.keys():
+        if output_name in compute_results:
+            results[output_name] = compute_results[output_name]
+
+    return results
 
 
 def call_builder_method(builder, op_name: str, args: Dict[str, Any]) -> Any:
@@ -267,28 +284,30 @@ def test_wpt_conformance(context, wpt_test_case, operation):
     except NotImplementedError as e:
         pytest.skip(f"Not implemented: {e}")
 
-    # For now, we just verify the graph builds successfully
-    # Full execution and validation will be added once compute() is implemented
-    pytest.skip("Graph execution (compute) not yet implemented - graph build validated")
+    # Validate results against expected outputs
+    expected_outputs = wpt_test_case.get("expectedOutputs", {})
+    for output_name, expected_spec in expected_outputs.items():
+        # Get actual output
+        if output_name not in results:
+            pytest.fail(f"Output '{output_name}' not found in results")
 
-    # TODO: Once compute() is implemented, add validation:
-    # expected_outputs = wpt_test_case.get("expectedOutputs", {})
-    # for output_name, expected_spec in expected_outputs.items():
-    #     actual = results[output_name]
-    #     expected = wpt_utils.numpy_array_from_test_data(expected_spec)
-    #     tolerance = wpt_utils.get_operation_tolerance(operation, wpt_test_case)
-    #     dtype = expected_spec.get("dataType", "float32")
-    #
-    #     passed, message, failures = wpt_utils.validate_result(
-    #         actual, expected, tolerance, dtype
-    #     )
-    #
-    #     if not passed:
-    #         failure_msg = wpt_utils.format_test_failure(
-    #             wpt_test_case.get("name", "unnamed"),
-    #             failures
-    #         )
-    #         pytest.fail(f"{message}\n{failure_msg}")
+        actual = results[output_name]
+        expected = wpt_utils.numpy_array_from_test_data(expected_spec)
+
+        # Get tolerance and validate
+        tolerance = wpt_utils.get_operation_tolerance(operation, wpt_test_case)
+        dtype = expected_spec.get("dataType", "float32")
+
+        passed, message, failures = wpt_utils.validate_result(
+            actual, expected, tolerance, dtype
+        )
+
+        if not passed:
+            failure_msg = wpt_utils.format_test_failure(
+                wpt_test_case.get("name", "unnamed"),
+                failures
+            )
+            pytest.fail(f"{message}\n{failure_msg}")
 
 
 # Mark all tests in this module
