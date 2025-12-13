@@ -7,7 +7,7 @@ This document tracks the implementation status of all WebNN operators across dif
 - [PAUSE] = Partially implemented (shape inference only, or missing parameters)
 -  = Not implemented
 
-**Last Updated:** 2025-12-08
+**Last Updated:** 2025-12-13
 
 ---
 
