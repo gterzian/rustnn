@@ -125,8 +125,20 @@ def execute_wpt_test_case(context, test_case: Dict[str, Any]) -> Dict[str, np.nd
         # Call the appropriate builder method
         result = call_builder_method(builder, op_name, resolved_args)
 
-        # Store result operand
-        operands[op_output] = result
+        # Store result operand(s)
+        # Some operations (like split) return multiple outputs
+        if isinstance(op_output, list):
+            # Multiple outputs - result should also be a list
+            if isinstance(result, (list, tuple)):
+                for idx, output_name in enumerate(op_output):
+                    operands[output_name] = result[idx]
+            else:
+                # Single result but multiple output names - store same result for all
+                for output_name in op_output:
+                    operands[output_name] = result
+        else:
+            # Single output
+            operands[op_output] = result
 
     # Step 3: Build graph with outputs
     expected_outputs = graph_desc.get("expectedOutputs", {})
