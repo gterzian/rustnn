@@ -387,6 +387,15 @@ def numpy_array_from_test_data(test_data: Dict[str, Any]) -> np.ndarray:
     }
 
     np_dtype = DTYPE_MAP.get(dtype_str, np.float32)
+
+    # Handle scalar data for large tensors (WPT uses scalar to avoid huge JSON files)
+    if isinstance(data, (int, float)):
+        # Calculate total elements needed
+        import math
+        total_elements = math.prod(shape) if shape else 1
+        # Create array filled with the scalar value
+        return np.full(shape, data, dtype=np_dtype)
+
     return np.array(data, dtype=np_dtype).reshape(shape)
 
 

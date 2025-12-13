@@ -23,7 +23,7 @@ impl Default for ContextProperties {
         .into_iter()
         .collect();
         Self {
-            tensor_byte_length_limit: 64 * 1024 * 1024,
+            tensor_byte_length_limit: 256 * 1024 * 1024, // 256MB to support WPT large tensor tests
             allowed_io_data_types,
         }
     }

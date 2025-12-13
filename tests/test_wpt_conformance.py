@@ -328,16 +328,8 @@ def test_wpt_conformance(context, wpt_test_case, operation):
     if wpt_test_case is None:
         pytest.skip(f"No test cases for {operation} (may require manual conversion)")
 
-    # Check for unsupported data types
+    # All data types and tensor sizes should be supported
     test_name = wpt_test_case.get("name", "")
-    unsupported_types = ["float16", "int8", "uint8", "int32", "uint32", "int64", "uint64"]
-    for dtype in unsupported_types:
-        if dtype in test_name.lower():
-            pytest.skip(f"Unsupported data type: {dtype}")
-
-    # Skip large tensor tests that exceed validation limits
-    if "large" in test_name.lower() and "input" in test_name.lower():
-        pytest.skip("Test uses tensors exceeding 64MB validation limit")
 
     # Execute test case and get results
     try:
