@@ -1088,6 +1088,77 @@ impl crate::converters::GraphConverter for OnnxConverter {
                     attribute: vec![], // No attributes for Expand
                     ..Default::default()
                 });
+            } else if op.op_type.starts_with("reduce") {
+                // Reduction operations - in ONNX opset 13, only ReduceSum supports axes as input
+                // In opset 18+, ReduceMean, ReduceProd, ReduceMax, ReduceMin also support axes as input
+                // But we're using opset 13, so only ReduceSum gets axes as input
+                let supports_axes_as_input = matches!(op.op_type.as_str(), "reduceSum");
+
+                let mut inputs: Vec<String> = op
+                    .input_operands
+                    .iter()
+                    .map(|id| Self::operand_name(graph, *id))
+                    .collect();
+
+                let mut attributes = Vec::new();
+
+                // Extract axes from attributes
+                if let Some(axes) = op.attributes.get("axes").and_then(|v| v.as_array()) {
+                    let axes_i64: Vec<i64> = axes
+                        .iter()
+                        .filter_map(|v| v.as_u64().map(|u| u as i64))
+                        .collect();
+
+                    if !axes_i64.is_empty() {
+                        if supports_axes_as_input {
+                            // Add axes as an input tensor (opset 13+ for supported operations)
+                            let axes_name = format!("{}_axes", op_name);
+                            inputs.push(axes_name.clone());
+
+                            initializers.push(TensorProto {
+                                name: Some(axes_name),
+                                data_type: Some(ProtoDataType::Int64 as i32),
+                                dims: vec![axes_i64.len() as i64],
+                                int64_data: axes_i64,
+                                ..Default::default()
+                            });
+                        } else {
+                            // Add axes as an attribute (for operations that don't support axes as input in opset 13)
+                            attributes.push(AttributeProto {
+                                name: Some("axes".to_string()),
+                                r#type: Some(AttributeType::Ints as i32),
+                                ints: axes_i64,
+                                ..Default::default()
+                            });
+                        }
+                    }
+                }
+
+                // Add keepDimensions attribute
+                if let Some(keep_dims) = op
+                    .attributes
+                    .get("keepDimensions")
+                    .and_then(|v| v.as_bool())
+                {
+                    attributes.push(AttributeProto {
+                        name: Some("keepdims".to_string()),
+                        r#type: Some(AttributeType::Int as i32),
+                        i: Some(if keep_dims { 1 } else { 0 }),
+                        ..Default::default()
+                    });
+                }
+
+                nodes.push(NodeProto {
+                    input: inputs,
+                    output: vec![Self::operand_name(
+                        graph,
+                        op.output_operand.expect("Single-output operation expected"),
+                    )],
+                    name: Some(op_name),
+                    op_type: Some(Self::onnx_op_type(&op.op_type)),
+                    attribute: attributes,
+                    ..Default::default()
+                });
             } else if op.op_type == "slice" {
                 // Slice operation - ONNX requires starts, ends, axes, steps as input tensors
                 // Special case: ONNX Runtime doesn't support slicing 0D tensors
