@@ -307,7 +307,7 @@ impl PyMLGraphBuilder {
     ///
     /// Returns:
     ///     MLOperand: The output operand
-    #[pyo3(signature = (input, filter, strides=None, dilations=None, pads=None, groups=None, input_layout=None, filter_layout=None))]
+    #[pyo3(signature = (input, filter, strides=None, dilations=None, pads=None, groups=None, input_layout=None, filter_layout=None, bias=None))]
     fn conv2d(
         &mut self,
         input: &PyMLOperand,
@@ -318,6 +318,7 @@ impl PyMLGraphBuilder {
         groups: Option<u32>,
         input_layout: Option<&str>,
         filter_layout: Option<&str>,
+        bias: Option<&PyMLOperand>,
     ) -> PyResult<PyMLOperand> {
         use crate::shape_inference::{
             Conv2dFilterLayout, Conv2dInputLayout, Conv2dOptions, infer_conv2d_shape,
@@ -378,8 +379,14 @@ impl PyMLGraphBuilder {
         let output_id = self.next_operand_id;
         self.next_operand_id += 1;
 
+        // Build input_operands list: [input, filter, bias?]
+        let mut input_operands = vec![input.id, filter.id];
+        if let Some(bias_op) = bias {
+            input_operands.push(bias_op.id);
+        }
+
         // Store parameters as JSON attributes
-        let attributes = serde_json::json!({
+        let mut attributes_map = serde_json::json!({
             "strides": strides,
             "dilations": dilations,
             "pads": pads,
@@ -388,11 +395,16 @@ impl PyMLGraphBuilder {
             "filterLayout": filter_layout.unwrap_or("oihw"),
         });
 
+        // Add bias flag if present
+        if bias.is_some() {
+            attributes_map["hasBias"] = serde_json::json!(true);
+        }
+
         let operation = Operation {
             op_type: "conv2d".to_string(),
-            input_operands: vec![input.id, filter.id],
+            input_operands,
             output_operand: output_id,
-            attributes,
+            attributes: attributes_map,
             label: None,
         };
 

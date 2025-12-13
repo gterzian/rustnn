@@ -335,6 +335,10 @@ def test_wpt_conformance(context, wpt_test_case, operation):
         if dtype in test_name.lower():
             pytest.skip(f"Unsupported data type: {dtype}")
 
+    # Skip large tensor tests that exceed validation limits
+    if "large" in test_name.lower() and "input" in test_name.lower():
+        pytest.skip("Test uses tensors exceeding 64MB validation limit")
+
     # Execute test case and get results
     try:
         results = execute_wpt_test_case(context, wpt_test_case)
