@@ -257,7 +257,7 @@ def main():
     elif args.backend == "gpu":
         accelerated, power, backend_name = True, "high-performance", "ONNX GPU"
     else:
-        accelerated, power, backend_name = True, "low-power", "CoreML"
+        accelerated, power, backend_name = True, "high-performance", "CoreML (Neural Engine)"
 
     print("=" * 70)
     print("Complete MobileNetV2 Image Classification with WebNN")
