@@ -305,6 +305,7 @@ def pytest_generate_tests(metafunc):
     Dynamically generate tests from WPT test data.
 
     This hook is called by pytest to parameterize test functions.
+    Backend parametrization is handled automatically by the context fixture.
     """
     if "wpt_test_case" in metafunc.fixturenames:
         # Discover all operations

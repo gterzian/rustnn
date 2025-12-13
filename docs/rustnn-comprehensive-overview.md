@@ -10,7 +10,7 @@
 
 **rustnn** (also known as PyWebNN when used from Python) is a cross-platform Rust implementation of the W3C Web Neural Network (WebNN) specification. It provides a complete graph validation, conversion, and execution system that mirrors Chromium's WebNN implementation while leveraging Rust's safety guarantees and cross-platform capabilities.
 
-**Now integrated into Mozilla Firefox** as its WebNN implementation, rustnn demonstrates viability as a production browser component.
+**Proof-of-concept Firefox integration** (in patches under review) demonstrates rustnn's potential viability as a production browser component.
 
 **Key Statistics:**
 - **85 of ~95 WebNN operations implemented** (89% specification coverage)
@@ -19,7 +19,7 @@
 - **85% compatibility with Chromium's CoreML backend**
 - **Three execution backends**: ONNX Runtime (cross-platform), CoreML (macOS), TensorRT (NVIDIA GPU)
 - **Pure Rust core** with thin Python bindings via PyO3
-- **Firefox integration**: First version in Firefox Nightly with 265 passing tests and MobileNetV2 demo
+- **Firefox integration**: POC patches with 265 passing tests and MobileNetV2 demo (under review)
 
 ---
 
@@ -663,9 +663,9 @@ let model: *mut Object = msg_send![ml_model_class, modelWithContentsOfURL:url er
 
 ### Overview
 
-Building on rustnn's success as a standalone library, **Mozilla Firefox has integrated rustnn as its WebNN implementation** (Bug 2005145). This integration demonstrates rustnn's viability as a production browser component and validates the architecture's flexibility.
+Building on rustnn's success as a standalone library, **Mozilla Firefox has proof-of-concept integration patches** that use rustnn as its WebNN implementation (Bug 2005145). This POC demonstrates rustnn's potential viability as a production browser component and validates the architecture's flexibility.
 
-**Status:** First version landed in Firefox Nightly with core functionality complete. IPC layer for multi-process execution planned for future releases.
+**Status:** POC patches under review (not yet landed). Core functionality implemented in patches. IPC layer for multi-process execution planned for future releases.
 
 ### Firefox WebNN Architecture
 
@@ -978,7 +978,7 @@ let attributes = json!({
 
 ### Current Limitations and Roadmap
 
-#### What Works Now (Firefox Nightly)
+#### What Works Now (in POC Patches)
 
 ✓ Core API (navigator.ml, MLContext, MLGraphBuilder, MLGraph, MLTensor)
 ✓ 15 operations (binary, activations, shape ops)
@@ -1029,7 +1029,7 @@ let attributes = json!({
 
 **Two major browsers implementing W3C WebNN:**
 - **Chromium**: Native C++ implementation (production, millions of users)
-- **Firefox**: Rust-based implementation (experimental, Firefox Nightly)
+- **Firefox**: Rust-based implementation (POC patches under review)
 
 **Benefits for developers:**
 - Write once, run in multiple browsers
@@ -1050,13 +1050,13 @@ let attributes = json!({
 
 | Feature | Chromium | Firefox | Standalone rustnn |
 |---------|----------|---------|-------------------|
-| **Status** | Production (Chrome Stable) | Experimental (Nightly) | Proof-of-concept |
+| **Status** | Production (Chrome Stable) | POC patches (under review) | Proof-of-concept |
 | **Operations** | ~85 | ~15 (growing) | 85 |
 | **Backends** | ONNX, CoreML, WebNN Service | ONNX, CoreML | ONNX, CoreML, TensorRT |
 | **Security** | Multi-process + sandbox | Single-process (IPC planned) | None |
 | **Performance** | Optimized (years of tuning) | Good (50-150ms MobileNetV2) | Good (50-150ms) |
 | **Testing** | Extensive (browser + WPT) | 265 tests + WPT planned | 1128+ WPT tests |
-| **Adoption** | Millions of users | Limited (Nightly only) | Research/experimentation |
+| **Adoption** | Millions of users | POC patches (not landed) | Research/experimentation |
 | **Maintenance** | Google Chrome team | Mozilla with community | Open source community |
 
 **Key insight:** All three implementations converge on similar architectures (layered approach, backend abstraction, W3C spec compliance), validating the WebNN specification's design.
@@ -1825,7 +1825,7 @@ make text-gen-trained
 - **Well-tested**: 1128+ WPT tests, 320+ Python tests, 115 Rust tests
 - **Chromium-compatible**: 95%+ architectural alignment
 - **Production-quality code**: Memory-safe Rust, comprehensive error handling
-- **Browser integration**: Successfully integrated into Mozilla Firefox as its WebNN implementation
+- **Browser integration**: POC patches for Mozilla Firefox (under review, not yet landed)
 
 ### What We've Learned
 
@@ -1859,7 +1859,7 @@ make text-gen-trained
 - Multiple backends show flexibility of abstraction
 - Python bindings show language interoperability
 - Testing shows compliance is achievable
-- **Firefox integration validates production viability** - rustnn running in a major browser
+- **Firefox POC patches validate potential viability** - demonstrates rustnn can work in a major browser
 
 ### Current Limitations
 
@@ -1905,7 +1905,7 @@ make text-gen-trained
 
 ### Final Thoughts
 
-**rustnn proves that W3C WebNN is viable both as a standalone library and as a browser component.** The combination of:
+**rustnn proves that W3C WebNN is viable both as a standalone library and potentially as a browser component.** The combination of:
 - A precise specification (W3C WebNN)
 - Comprehensive tests (WPT)
 - Reference implementation (Chromium)
@@ -1913,8 +1913,8 @@ make text-gen-trained
 
 ...made this project not just possible, but efficient and high-quality. We built in 3 months what would have taken 9 months manually, with better test coverage and more consistent code.
 
-**The future of neural network APIs is standardization.** rustnn shows this future is practical, achievable, and beneficial for the entire ecosystem. With integration into both a standalone library and Mozilla Firefox, we now have:
-- **Two major browser implementations** (Chromium and Firefox) validating the W3C specification
+**The future of neural network APIs is standardization.** rustnn shows this future is practical, achievable, and beneficial for the entire ecosystem. With Chromium in production and Firefox POC patches in progress, we're seeing:
+- **Browser implementations emerging** - Chromium production, Firefox POC validating the W3C specification
 - **Multiple deployment models** (Python library, browser API, native applications)
 - **Proven cross-language FFI** (C++ ↔ Rust) working in production
 - **Ecosystem momentum** toward standardized neural network APIs

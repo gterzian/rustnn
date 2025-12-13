@@ -76,45 +76,17 @@ def ml():
     return webnn.ML()
 
 
-def pytest_generate_tests(metafunc):
-    """
-    Parameterize tests to run against all available backends.
-
-    Tests that use the 'context' fixture will run once for each available backend.
-    """
-    if "context" in metafunc.fixturenames:
-        backends = []
-        backend_ids = []
-
-        if ONNX_RUNTIME_AVAILABLE:
-            backends.append(("onnx", False))
-            backend_ids.append("onnx")
-
-        if COREML_RUNTIME_AVAILABLE:
-            backends.append(("coreml", True))
-            backend_ids.append("coreml")
-
-        if not backends:
-            # No backends available - create a dummy parameter that will skip
-            backends.append((None, None))
-            backend_ids.append("no_backend")
-
-        metafunc.parametrize("backend_info", backends, ids=backend_ids, indirect=True)
-
-
-@pytest.fixture
-def backend_info(request):
-    """Fixture that provides backend information."""
-    return request.param
-
-
-@pytest.fixture
-def context(ml, backend_info):
+@pytest.fixture(params=[
+    pytest.param(("onnx", False), id="onnx") if ONNX_RUNTIME_AVAILABLE else pytest.param((None, None), id="no_onnx", marks=pytest.mark.skip),
+    pytest.param(("coreml", True), id="coreml") if COREML_RUNTIME_AVAILABLE else pytest.param((None, None), id="no_coreml", marks=pytest.mark.skip),
+])
+def context(request, ml):
     """Create ML context for the specified backend."""
-    if backend_info[0] is None:
-        pytest.skip("No backend available")
+    backend_name, accelerated = request.param
 
-    backend_name, accelerated = backend_info
+    if backend_name is None:
+        pytest.skip("Backend not available")
+
     ctx = ml.create_context(power_preference="default", accelerated=accelerated)
     return ctx
 
