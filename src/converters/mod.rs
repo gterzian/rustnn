@@ -5,15 +5,19 @@ use crate::graph::GraphInfo;
 
 mod coreml_mlprogram;
 mod onnx;
+mod weight_file_builder;
 
 pub use coreml_mlprogram::CoremlMlProgramConverter;
 pub use onnx::OnnxConverter;
+pub(crate) use weight_file_builder::WeightFileBuilder;
 
 #[derive(Debug, Clone)]
 pub struct ConvertedGraph {
     pub format: &'static str,
     pub content_type: &'static str,
     pub data: Vec<u8>,
+    /// Optional weight file data for formats that require external weights (e.g., CoreML Float16)
+    pub weights_data: Option<Vec<u8>>,
 }
 
 pub trait GraphConverter {
@@ -75,6 +79,7 @@ mod tests {
                 format: "dummy",
                 content_type: "application/octet-stream",
                 data: vec![1, 2, 3],
+                weights_data: None,
             })
         }
     }

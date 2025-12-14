@@ -2217,6 +2217,7 @@ impl crate::converters::GraphConverter for OnnxConverter {
             format: "onnx",
             content_type: "application/onnx",
             data,
+            weights_data: None, // ONNX doesn't use external weight files
         })
     }
 }

@@ -1893,6 +1893,7 @@ impl super::GraphConverter for CoremlMlProgramConverter {
             format: "coreml",
             content_type: "application/x-coreml-model",
             data: buffer,
+            weights_data: None, // Will be populated with Float16 weight file in Phase 2
         })
     }
 }
