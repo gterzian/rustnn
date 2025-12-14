@@ -80,6 +80,7 @@ impl WeightFileBuilder {
     }
 
     /// Returns the file offset for a previously added weight
+    #[allow(dead_code)]
     pub fn get_offset(&self, operand_id: u32) -> Option<u64> {
         self.offsets.get(&operand_id).copied()
     }
@@ -102,6 +103,7 @@ impl WeightFileBuilder {
     }
 
     /// Returns the current size of the weight data (may not be aligned)
+    #[allow(dead_code)]
     pub fn size(&self) -> usize {
         self.data.len()
     }

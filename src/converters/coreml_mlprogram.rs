@@ -779,6 +779,7 @@ impl CoremlMlProgramConverter {
     }
 
     /// Map WebNN operation to MIL operation (convenience wrapper without overrides)
+    #[allow(dead_code)]
     fn convert_operation(
         &self,
         graph: &GraphInfo,
@@ -2126,12 +2127,6 @@ impl CoremlMlProgramConverter {
                         "Unsupported feature data type: {:?}. CoreML feature descriptions only support DOUBLE, FLOAT32, FLOAT16, INT32.",
                         descriptor.data_type
                     ),
-                });
-            }
-            _ => {
-                return Err(GraphError::ConversionFailed {
-                    format: "coreml_mlprogram".to_string(),
-                    reason: format!("Unsupported feature data type: {:?}", descriptor.data_type),
                 });
             }
         };

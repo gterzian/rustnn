@@ -60,7 +60,7 @@ def print_error(message: str, indent: int = 3) -> None:
     print(f"{' ' * indent}✗ {message}")
 
 
-def test_simple_graph(context: "webnn.MLContext") -> "webnn.MLGraph":
+def build_simple_graph(context: "webnn.MLContext") -> "webnn.MLGraph":
     """Test building a simple graph: output = relu(x + y).
 
     Args:
@@ -92,7 +92,7 @@ def test_simple_graph(context: "webnn.MLContext") -> "webnn.MLGraph":
     return graph
 
 
-def test_complex_graph(context: "webnn.MLContext") -> "webnn.MLGraph":
+def build_complex_graph(context: "webnn.MLContext") -> "webnn.MLGraph":
     """Test building a complex graph with constants: output = sigmoid(input @ weights).
 
     Args:
@@ -129,8 +129,8 @@ def test_complex_graph(context: "webnn.MLContext") -> "webnn.MLGraph":
     return graph
 
 
-def test_onnx_conversion(context: "webnn.MLContext", graph: "webnn.MLGraph",
-                        output_path: str) -> bool:
+def convert_to_onnx(context: "webnn.MLContext", graph: "webnn.MLGraph",
+                   output_path: str) -> bool:
     """Test ONNX conversion.
 
     Args:
@@ -156,8 +156,8 @@ def test_onnx_conversion(context: "webnn.MLContext", graph: "webnn.MLGraph",
         return False
 
 
-def test_coreml_conversion(context: "webnn.MLContext", graph: "webnn.MLGraph",
-                          output_path: str) -> bool:
+def convert_to_coreml(context: "webnn.MLContext", graph: "webnn.MLGraph",
+                     output_path: str) -> bool:
     """Test CoreML conversion (macOS only).
 
     Args:
