@@ -284,31 +284,12 @@ impl CoremlMlProgramConverter {
                 }
             }
             crate::graph::DataType::Float16 => {
-                // Float16 needs to be converted to Float32 for CoreML constants
-                // CoreML doesn't support Float16 constant data directly
-                // Convert f16 bytes to f32 values
-                let f16_count = constant_data.data.len() / 2;
-                let mut floats = Vec::with_capacity(f16_count);
-                for i in 0..f16_count {
-                    let bytes = [constant_data.data[i * 2], constant_data.data[i * 2 + 1]];
-                    let f16_bits = u16::from_le_bytes(bytes);
-                    let f16_val = half::f16::from_bits(f16_bits);
-                    floats.push(f16_val.to_f32());
-                }
-
-                // Update output_type to Float32 since we converted the data
-                if let Some(ref mut value_type) = output_type.r#type {
-                    if let Some(crate::protos::coreml::mil_spec::value_type::Type::TensorType(
-                        ref mut tensor_type,
-                    )) = value_type.r#type
-                    {
-                        tensor_type.data_type = MilDataType::Float32 as i32;
-                    }
-                }
-
+                // Float16 stored as raw bytes, following Chromium's approach
+                // CoreML stores fp16 constants as bytes with Float16 type descriptor
+                // Reference: chromium/src/services/webnn/coreml/graph_builder_coreml.cc
                 TensorValue {
-                    value: Some(tensor_value::Value::Floats(tensor_value::RepeatedFloats {
-                        values: floats,
+                    value: Some(tensor_value::Value::Bytes(tensor_value::RepeatedBytes {
+                        values: constant_data.data.clone().into(),
                     })),
                 }
             }
