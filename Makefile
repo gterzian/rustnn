@@ -13,7 +13,8 @@ ORT_DIR ?= target/onnxruntime
 ORT_LIB_DIR ?= $(ORT_DIR)/onnxruntime-osx-arm64-$(ORT_VERSION)/lib
 ORT_LIB_LOCATION ?= $(ORT_LIB_DIR)
 .PHONY: build test fmt run viz onnx coreml coreml-validate onnx-validate validate-all-env \
-	python-dev python-build python-test python-test-wpt python-perf python-perf-full python-clean python-example \
+	python-dev python-build python-test python-test-wpt python-test-wpt-onnx python-test-wpt-coreml \
+	python-perf python-perf-full python-clean python-example \
 	mobilenet-demo text-gen-demo text-gen-train text-gen-trained text-gen-enhanced text-gen-train-simple \
 	docs-serve docs-build docs-clean ci-docs \
 	help clean-all
@@ -132,6 +133,22 @@ python-test-wpt: python-dev
 		DYLD_LIBRARY_PATH=$(ORT_LIB_DIR) .venv-webnn/bin/python -m pytest tests/test_wpt_conformance.py -v; \
 	else \
 		DYLD_LIBRARY_PATH=$(ORT_LIB_DIR) python -m pytest tests/test_wpt_conformance.py -v; \
+	fi
+
+python-test-wpt-onnx: python-dev
+	@echo "Running WPT conformance tests - ONNX backend only..."
+	@if [ -f .venv-webnn/bin/python ]; then \
+		DYLD_LIBRARY_PATH=$(ORT_LIB_DIR) .venv-webnn/bin/python -m pytest tests/test_wpt_conformance.py -k "onnx" -v; \
+	else \
+		DYLD_LIBRARY_PATH=$(ORT_LIB_DIR) python -m pytest tests/test_wpt_conformance.py -k "onnx" -v; \
+	fi
+
+python-test-wpt-coreml: python-dev
+	@echo "Running WPT conformance tests - CoreML backend only..."
+	@if [ -f .venv-webnn/bin/python ]; then \
+		DYLD_LIBRARY_PATH=$(ORT_LIB_DIR) .venv-webnn/bin/python -m pytest tests/test_wpt_conformance.py -k "coreml" -v; \
+	else \
+		DYLD_LIBRARY_PATH=$(ORT_LIB_DIR) python -m pytest tests/test_wpt_conformance.py -k "coreml" -v; \
 	fi
 
 python-perf: python-dev
