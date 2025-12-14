@@ -518,6 +518,45 @@ impl CoremlMlProgramConverter {
         }
     }
 
+    /// Create an Argument from an immediate float16 value (scalar)
+    fn create_immediate_float16(value: f32) -> Argument {
+        use crate::protos::coreml::mil_spec::{
+            DataType as MilDataType, TensorType, TensorValue, Value, ValueType, tensor_value,
+            value, value_type,
+        };
+
+        // Convert f32 to f16 bytes
+        let f16_bits = half::f16::from_f32(value).to_bits();
+        let bytes = f16_bits.to_le_bytes().to_vec();
+
+        let tensor_value = TensorValue {
+            value: Some(tensor_value::Value::Bytes(tensor_value::RepeatedBytes {
+                values: bytes.into(),
+            })),
+        };
+
+        let val = Value {
+            doc_string: String::new(),
+            r#type: Some(ValueType {
+                r#type: Some(value_type::Type::TensorType(TensorType {
+                    data_type: MilDataType::Float16 as i32,
+                    rank: 0, // Scalar
+                    dimensions: vec![],
+                    attributes: HashMap::new(),
+                })),
+            }),
+            value: Some(value::Value::ImmediateValue(value::ImmediateValue {
+                value: Some(value::immediate_value::Value::Tensor(tensor_value)),
+            })),
+        };
+
+        Argument {
+            arguments: vec![crate::protos::coreml::mil_spec::argument::Binding {
+                binding: Some(Binding::Value(val)),
+            }],
+        }
+    }
+
     /// Create an Argument from an immediate string value
     fn create_immediate_string(value: &str) -> Argument {
         use crate::protos::coreml::mil_spec::{
@@ -1144,8 +1183,31 @@ impl CoremlMlProgramConverter {
                     .and_then(|v| v.as_f64())
                     .unwrap_or(f64::INFINITY) as f32;
 
-                inputs.insert("alpha".to_string(), Self::create_immediate_float(min_value));
-                inputs.insert("beta".to_string(), Self::create_immediate_float(max_value));
+                // Alpha and beta must match input type (CoreML requirement)
+                // Check first input operand type and use appropriate immediate value method
+                let use_float16 = if !op.input_operands.is_empty() {
+                    if let Some(input_operand) = _graph.operand(op.input_operands[0]) {
+                        input_operand.descriptor.data_type == DataType::Float16
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                };
+
+                if use_float16 {
+                    inputs.insert(
+                        "alpha".to_string(),
+                        Self::create_immediate_float16(min_value),
+                    );
+                    inputs.insert(
+                        "beta".to_string(),
+                        Self::create_immediate_float16(max_value),
+                    );
+                } else {
+                    inputs.insert("alpha".to_string(), Self::create_immediate_float(min_value));
+                    inputs.insert("beta".to_string(), Self::create_immediate_float(max_value));
+                }
             }
 
             // Transpose operation: x, permutation
