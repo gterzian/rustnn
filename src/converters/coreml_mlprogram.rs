@@ -1540,7 +1540,10 @@ impl CoremlMlProgramConverter {
                 }
 
                 // Add validate_indices parameter (required by CoreML, defaults to true)
-                inputs.insert("validate_indices".to_string(), Self::create_immediate_bool(true));
+                inputs.insert(
+                    "validate_indices".to_string(),
+                    Self::create_immediate_bool(true),
+                );
             }
 
             "split" => {
@@ -1703,21 +1706,22 @@ impl CoremlMlProgramConverter {
                 }
 
                 // Add dtype parameter (required)
-                // CoreML dtype values as integers from MilDataType enum
+                // CoreML expects dtype as a string, not an integer
                 if let Some(to_type) = op.attributes.get("to").and_then(|v| v.as_str()) {
-                    use crate::protos::coreml::mil_spec::DataType as MilDataType;
-
-                    let dtype_code = match to_type {
-                        "float32" => MilDataType::Float32 as u32,
-                        "float16" => MilDataType::Float16 as u32,
-                        "int32" => MilDataType::Int32 as u32,
-                        "uint32" => MilDataType::Uint32 as u32,
-                        "int8" => MilDataType::Int8 as u32,
-                        "uint8" => MilDataType::Uint8 as u32,
-                        "int64" => MilDataType::Int64 as u32,
-                        _ => MilDataType::Float32 as u32, // default
+                    let dtype_string = match to_type {
+                        "float32" => "fp32",
+                        "float16" => "fp16",
+                        "int32" => "int32",
+                        "uint32" => "uint32",
+                        "int8" => "int8",
+                        "uint8" => "uint8",
+                        "int64" => "int64",
+                        _ => "fp32", // default
                     };
-                    inputs.insert("dtype".to_string(), Self::create_immediate_int(dtype_code));
+                    inputs.insert(
+                        "dtype".to_string(),
+                        Self::create_immediate_string(dtype_string),
+                    );
                 }
             }
 
