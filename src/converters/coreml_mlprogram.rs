@@ -1137,11 +1137,13 @@ impl CoremlMlProgramConverter {
                 }
             }
 
-            // HardSwish: x only (CoreML hardswish doesn't take alpha/beta)
+            // HardSwish: decomposed in main loop (hardsigmoid + mul)
+            // This case should never be reached due to continue in main loop
             "hardswish" => {
-                if !input_names.is_empty() {
-                    inputs.insert("x".to_string(), Self::create_argument(&input_names[0]));
-                }
+                return Err(GraphError::ConversionFailed {
+                    format: "coreml_mlprogram".to_string(),
+                    reason: "hardswish should be decomposed in main loop, not here".to_string(),
+                });
             }
 
             // HardSigmoid: x, alpha, beta parameters
@@ -2209,6 +2211,139 @@ impl super::GraphConverter for CoremlMlProgramConverter {
                         }
                     }
                 }
+            }
+
+            // Special handling for hardswish (decompose into hardsigmoid + mul)
+            // Following Chromium: hardswish = x * hardsigmoid(x, alpha=1/6, beta=0.5)
+            // Note: op_type is "hardSwish" but we normalize to lowercase
+            let op_type_lower = op.op_type.to_lowercase();
+            if op_type_lower == "hardswish" {
+                // Validate inputs/outputs exist
+                // Note: hardswish uses output_operand (singular), not output_operands
+                if op.input_operands.is_empty() || op.output_operand.is_none() {
+                    return Err(GraphError::ConversionFailed {
+                        format: "coreml_mlprogram".to_string(),
+                        reason: "hardswish requires input and output operand".to_string(),
+                    });
+                }
+
+                let input_operand = graph_info.operand(op.input_operands[0]).ok_or_else(|| {
+                    GraphError::ConversionFailed {
+                        format: "coreml_mlprogram".to_string(),
+                        reason: format!("Input operand {} not found", op.input_operands[0]),
+                    }
+                })?;
+                {
+                    let input_name = Self::operand_name(graph_info, op.input_operands[0]);
+                    let hardsigmoid_output_name = format!("{}_hardswish_hardsigmoid", input_name);
+
+                    // Create hardsigmoid operation with alpha=1/6, beta=0.5
+                    let mut hardsigmoid_inputs: HashMap<String, Argument> = HashMap::new();
+                    hardsigmoid_inputs.insert(
+                        "x".to_string(),
+                        Self::create_name_argument(input_name.clone()),
+                    );
+                    hardsigmoid_inputs
+                        .insert("alpha".to_string(), Self::create_immediate_float(1.0 / 6.0));
+                    hardsigmoid_inputs
+                        .insert("beta".to_string(), Self::create_immediate_float(0.5));
+
+                    // Create tensor type for hardsigmoid output
+                    let dtype = Self::mil_data_type(&input_operand.descriptor.data_type)?;
+                    let dimensions: Vec<Dimension> = input_operand
+                        .descriptor
+                        .shape
+                        .iter()
+                        .map(|&d| Dimension {
+                            dimension: Some(dimension::Dimension::Constant(
+                                dimension::ConstantDimension { size: d as u64 },
+                            )),
+                        })
+                        .collect();
+
+                    let value_type = ValueType {
+                        r#type: Some(
+                            crate::protos::coreml::mil_spec::value_type::Type::TensorType(
+                                TensorType {
+                                    rank: dimensions.len() as i64,
+                                    data_type: dtype,
+                                    dimensions,
+                                    attributes: HashMap::new(),
+                                },
+                            ),
+                        ),
+                    };
+
+                    let hardsigmoid_output_type = NamedValueType {
+                        name: hardsigmoid_output_name.clone(),
+                        r#type: Some(value_type),
+                    };
+
+                    let hardsigmoid_op = Self::create_mil_operation(
+                        "sigmoid_hard",
+                        hardsigmoid_inputs,
+                        vec![hardsigmoid_output_type],
+                    );
+
+                    main_block.operations.push(hardsigmoid_op);
+
+                    // Create mul operation: x * hardsigmoid_output
+                    let mut mul_inputs: HashMap<String, Argument> = HashMap::new();
+                    mul_inputs.insert("x".to_string(), Self::create_name_argument(input_name));
+                    mul_inputs.insert(
+                        "y".to_string(),
+                        Self::create_name_argument(hardsigmoid_output_name),
+                    );
+
+                    // Get output name (using singular output_operand field)
+                    let output_operand_id = op.output_operand.unwrap();
+                    let output_name = Self::operand_name(graph_info, output_operand_id);
+                    let output_operand =
+                        graph_info.operand(output_operand_id).ok_or_else(|| {
+                            GraphError::ConversionFailed {
+                                format: "coreml_mlprogram".to_string(),
+                                reason: format!("Output operand {} not found", output_operand_id),
+                            }
+                        })?;
+
+                    let output_dtype = Self::mil_data_type(&output_operand.descriptor.data_type)?;
+                    let output_dimensions: Vec<Dimension> = output_operand
+                        .descriptor
+                        .shape
+                        .iter()
+                        .map(|&d| Dimension {
+                            dimension: Some(dimension::Dimension::Constant(
+                                dimension::ConstantDimension { size: d as u64 },
+                            )),
+                        })
+                        .collect();
+
+                    let output_value_type = ValueType {
+                        r#type: Some(
+                            crate::protos::coreml::mil_spec::value_type::Type::TensorType(
+                                TensorType {
+                                    rank: output_dimensions.len() as i64,
+                                    data_type: output_dtype,
+                                    dimensions: output_dimensions,
+                                    attributes: HashMap::new(),
+                                },
+                            ),
+                        ),
+                    };
+
+                    let mul_output_type = NamedValueType {
+                        name: output_name,
+                        r#type: Some(output_value_type),
+                    };
+
+                    let mul_op =
+                        Self::create_mil_operation("mul", mul_inputs, vec![mul_output_type]);
+
+                    main_block.operations.push(mul_op);
+                }
+
+                // Skip normal operation conversion for hardswish
+                continue;
             }
 
             let mil_op = self.convert_operation(graph_info, op)?;
