@@ -241,7 +241,7 @@ impl CoremlMlProgramConverter {
         use crate::protos::coreml::mil_spec::DataType as MilDataType;
         use crate::protos::coreml::mil_spec::{TensorValue, Value, tensor_value, value};
 
-        let (_name, mut output_type) = Self::create_value(graph, operand_id)?;
+        let (_name, output_type) = Self::create_value(graph, operand_id)?;
 
         // Create tensor value from constant data
         let tensor_value = match operand.descriptor.data_type {
@@ -284,9 +284,33 @@ impl CoremlMlProgramConverter {
                 }
             }
             crate::graph::DataType::Float16 => {
-                // Float16 stored as raw bytes, following Chromium's approach
-                // CoreML stores fp16 constants as bytes with Float16 type descriptor
+                // CoreML MLProgram (MIL) requires non-scalar Float16 constants to be stored
+                // in a separate weight file with BlobFileValue references, not as immediate values.
+                // Only scalar (0D) Float16 can be stored as immediate bytes.
+                //
+                // Chromium's implementation uses WeightsFileHandle::Write() which:
+                // - For scalars (empty shape): stores as immediate value
+                // - For non-scalars: writes to weights.bin with 64-byte alignment
+                //
                 // Reference: chromium/src/services/webnn/coreml/graph_builder_coreml.cc
+                //
+                // TODO: Implement weight file mechanism for Float16 non-scalar constants
+                // For now, return error for non-scalar Float16 constants
+
+                let is_scalar = operand.descriptor.shape.is_empty();
+                if !is_scalar {
+                    return Err(GraphError::ConversionFailed {
+                        format: "coreml_mlprogram".to_string(),
+                        reason: format!(
+                            "Float16 non-scalar constants require weight file support (not yet implemented). \
+                             Operand shape: {:?}. CoreML requires non-scalar Float16 constants to use \
+                             BlobFileValue with external weights.bin file.",
+                            operand.descriptor.shape
+                        ),
+                    });
+                }
+
+                // Scalar Float16: store as immediate bytes (this works)
                 TensorValue {
                     value: Some(tensor_value::Value::Bytes(tensor_value::RepeatedBytes {
                         values: constant_data.data.clone().into(),
