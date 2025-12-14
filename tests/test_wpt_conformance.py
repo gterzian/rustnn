@@ -574,8 +574,11 @@ def test_wpt_conformance(context, backend_name, wpt_test_case, operation):
                     pytest.skip(f"CoreML limitation: {operation} only supports fp32/fp16, not int32")
 
     # Skip CoreML 0D (scalar) tensor operations that don't support rank-0
+    # TODO: Implement reshape workaround (0D->1D->op->0D) like Chromium does
+    # See: crbug.com/391672283 - Chromium handles this for gather with 5D input
+    # by reshaping indices from 0D to [1], running gather, then reshaping output back
     if backend_name == "coreml":
-        scalar_unsupported_ops = ["transpose", "slice"]
+        scalar_unsupported_ops = ["transpose", "slice", "gather"]
         if operation in scalar_unsupported_ops and "0D" in test_name:
             pytest.skip(f"CoreML limitation: {operation} doesn't support 0D (scalar) tensors")
 
