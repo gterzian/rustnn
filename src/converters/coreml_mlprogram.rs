@@ -1288,6 +1288,12 @@ impl CoremlMlProgramConverter {
                     inputs.insert("bias".to_string(), Self::create_argument(&input_names[2]));
                 }
 
+                // CoreML requires pad_type parameter (defaults to "custom" for explicit padding)
+                inputs.insert(
+                    "pad_type".to_string(),
+                    Self::create_immediate_string("custom"),
+                );
+
                 // Add parameters from attributes
                 if let Some(strides) = op.attributes.get("strides").and_then(|v| v.as_array()) {
                     let strides_u32: Vec<u32> = strides
@@ -1328,19 +1334,19 @@ impl CoremlMlProgramConverter {
                     }
                 }
 
-                if let Some(output_padding) = op
-                    .attributes
-                    .get("outputPadding")
-                    .and_then(|v| v.as_array())
+                // Handle outputSizes (explicit output spatial dimensions [H, W])
+                // CoreML expects this as 'output_shape' parameter
+                if let Some(output_sizes) =
+                    op.attributes.get("outputSizes").and_then(|v| v.as_array())
                 {
-                    let output_padding_u32: Vec<u32> = output_padding
+                    let output_sizes_u32: Vec<u32> = output_sizes
                         .iter()
                         .filter_map(|v| v.as_u64().map(|u| u as u32))
                         .collect();
-                    if !output_padding_u32.is_empty() {
+                    if !output_sizes_u32.is_empty() {
                         inputs.insert(
                             "output_shape".to_string(),
-                            Self::create_immediate_int_array(&output_padding_u32),
+                            Self::create_immediate_int_array(&output_sizes_u32),
                         );
                     }
                 }
