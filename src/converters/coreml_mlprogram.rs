@@ -239,7 +239,6 @@ impl CoremlMlProgramConverter {
         constant_data: &crate::graph::ConstantData,
         weight_builder: &mut super::WeightFileBuilder,
     ) -> Result<MilOperation, GraphError> {
-        use crate::protos::coreml::mil_spec::DataType as MilDataType;
         use crate::protos::coreml::mil_spec::{TensorValue, Value, tensor_value, value};
 
         let (_name, output_type) = Self::create_value(graph, operand_id)?;
@@ -1929,5 +1928,343 @@ impl super::GraphConverter for CoremlMlProgramConverter {
             data: buffer,
             weights_data,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::converters::GraphConverter;
+    use crate::graph::{
+        ConstantData, GraphInfo, Operand, OperandDescriptor, OperandKind, Operation,
+    };
+    use std::collections::HashMap;
+
+    /// Helper to create a simple graph with a Float16 constant
+    fn create_graph_with_float16_constant(shape: Vec<u32>, data: Vec<u8>) -> GraphInfo {
+        let mut graph = GraphInfo {
+            input_operands: vec![],
+            output_operands: vec![1], // Output is operand 1
+            operands: vec![],
+            operations: vec![],
+            constant_operand_ids_to_handles: HashMap::new(),
+            id_to_constant_tensor_operand_map: HashMap::new(),
+        };
+
+        // Operand 0: Float16 constant
+        graph.operands.push(Operand {
+            name: Some("constant".to_string()),
+            kind: OperandKind::Constant,
+            descriptor: OperandDescriptor {
+                data_type: DataType::Float16,
+                shape: shape.clone(),
+                pending_permutation: vec![],
+            },
+        });
+
+        // Operand 1: Output (relu result)
+        graph.operands.push(Operand {
+            name: Some("output".to_string()),
+            kind: OperandKind::Output,
+            descriptor: OperandDescriptor {
+                data_type: DataType::Float16,
+                shape,
+                pending_permutation: vec![],
+            },
+        });
+
+        // Add constant data
+        graph
+            .constant_operand_ids_to_handles
+            .insert(0, ConstantData { data, label: None });
+
+        // Add a simple relu operation
+        graph.operations.push(Operation {
+            op_type: "relu".to_string(),
+            input_operands: vec![0],
+            output_operand: Some(1),
+            output_operands: vec![],
+            attributes: serde_json::Value::Null,
+            label: None,
+        });
+
+        graph
+    }
+
+    #[test]
+    fn test_float16_scalar_constant_uses_immediate_value() {
+        // Create a scalar Float16 constant (shape = [])
+        let f16_val = half::f16::from_f32(1.5);
+        let data = f16_val.to_le_bytes().to_vec();
+
+        let graph = create_graph_with_float16_constant(vec![], data.clone());
+
+        // Convert the graph
+        let converter = CoremlMlProgramConverter;
+        let result = converter.convert(&graph).unwrap();
+
+        // Verify no weights_data (scalar uses immediate value)
+        assert!(
+            result.weights_data.is_none(),
+            "Scalar Float16 should not use weight file"
+        );
+
+        // Verify the model data is valid protobuf
+        assert!(!result.data.is_empty(), "Model data should not be empty");
+    }
+
+    #[test]
+    fn test_float16_1d_constant_uses_weight_file() {
+        // Create a 1D Float16 constant [3] - non-scalar
+        let data = vec![
+            0x00, 0x3C, // f16: 1.0
+            0x00, 0x40, // f16: 2.0
+            0x00, 0x42, // f16: 3.0
+        ];
+
+        let graph = create_graph_with_float16_constant(vec![3], data.clone());
+
+        // Convert the graph
+        let converter = CoremlMlProgramConverter;
+        let result = converter.convert(&graph).unwrap();
+
+        // Verify weights_data is present
+        assert!(
+            result.weights_data.is_some(),
+            "Non-scalar Float16 should use weight file"
+        );
+
+        let weights = result.weights_data.unwrap();
+
+        // Verify weight file structure
+        // Expected structure:
+        // [0-3]: sentinel (0xDEADBEEF)
+        // [4-11]: count (3)
+        // [12-17]: data (6 bytes)
+        // [18-63]: padding (46 bytes)
+        assert_eq!(weights.len(), 64, "Weight file should be 64-byte aligned");
+
+        // Verify sentinel
+        let sentinel = u32::from_le_bytes([weights[0], weights[1], weights[2], weights[3]]);
+        assert_eq!(sentinel, 0xDEADBEEF, "Sentinel should be 0xDEADBEEF");
+
+        // Verify count
+        let count = u64::from_le_bytes([
+            weights[4],
+            weights[5],
+            weights[6],
+            weights[7],
+            weights[8],
+            weights[9],
+            weights[10],
+            weights[11],
+        ]);
+        assert_eq!(count, 3, "Element count should be 3");
+
+        // Verify data
+        assert_eq!(
+            &weights[12..18],
+            &data[..],
+            "Weight data should match input"
+        );
+    }
+
+    #[test]
+    fn test_float16_2d_constant_uses_weight_file() {
+        // Create a 2D Float16 constant [2, 2]
+        let data = vec![
+            0x00, 0x3C, // f16: 1.0
+            0x00, 0x40, // f16: 2.0
+            0x00, 0x42, // f16: 3.0
+            0x00, 0x44, // f16: 4.0
+        ];
+
+        let graph = create_graph_with_float16_constant(vec![2, 2], data.clone());
+
+        // Convert the graph
+        let converter = CoremlMlProgramConverter;
+        let result = converter.convert(&graph).unwrap();
+
+        // Verify weights_data is present
+        assert!(
+            result.weights_data.is_some(),
+            "2D Float16 constant should use weight file"
+        );
+
+        let weights = result.weights_data.unwrap();
+
+        // Verify count matches 2x2 = 4 elements
+        let count = u64::from_le_bytes([
+            weights[4],
+            weights[5],
+            weights[6],
+            weights[7],
+            weights[8],
+            weights[9],
+            weights[10],
+            weights[11],
+        ]);
+        assert_eq!(count, 4, "Element count should be 4");
+    }
+
+    #[test]
+    fn test_multiple_float16_constants_in_weight_file() {
+        // Create a graph with TWO Float16 constants
+        let mut graph = GraphInfo {
+            input_operands: vec![],
+            output_operands: vec![2],
+            operands: vec![],
+            operations: vec![],
+            constant_operand_ids_to_handles: HashMap::new(),
+            id_to_constant_tensor_operand_map: HashMap::new(),
+        };
+
+        // Operand 0: First Float16 constant [2]
+        let data1 = vec![0x00, 0x3C, 0x00, 0x40]; // 1.0, 2.0
+        graph.operands.push(Operand {
+            name: Some("constant1".to_string()),
+            kind: OperandKind::Constant,
+            descriptor: OperandDescriptor {
+                data_type: DataType::Float16,
+                shape: vec![2],
+                pending_permutation: vec![],
+            },
+        });
+        graph.constant_operand_ids_to_handles.insert(
+            0,
+            ConstantData {
+                data: data1,
+                label: None,
+            },
+        );
+
+        // Operand 1: Second Float16 constant [2]
+        let data2 = vec![0x00, 0x42, 0x00, 0x44]; // 3.0, 4.0
+        graph.operands.push(Operand {
+            name: Some("constant2".to_string()),
+            kind: OperandKind::Constant,
+            descriptor: OperandDescriptor {
+                data_type: DataType::Float16,
+                shape: vec![2],
+                pending_permutation: vec![],
+            },
+        });
+        graph.constant_operand_ids_to_handles.insert(
+            1,
+            ConstantData {
+                data: data2,
+                label: None,
+            },
+        );
+
+        // Operand 2: Output
+        graph.operands.push(Operand {
+            name: Some("output".to_string()),
+            kind: OperandKind::Output,
+            descriptor: OperandDescriptor {
+                data_type: DataType::Float16,
+                shape: vec![2],
+                pending_permutation: vec![],
+            },
+        });
+
+        // Add operation: output = constant1 + constant2
+        graph.operations.push(Operation {
+            op_type: "add".to_string(),
+            input_operands: vec![0, 1],
+            output_operand: Some(2),
+            output_operands: vec![],
+            attributes: serde_json::Value::Null,
+            label: None,
+        });
+
+        // Convert
+        let converter = CoremlMlProgramConverter;
+        let result = converter.convert(&graph).unwrap();
+
+        // Verify weights_data is present
+        assert!(
+            result.weights_data.is_some(),
+            "Multiple Float16 constants should use weight file"
+        );
+
+        let weights = result.weights_data.unwrap();
+
+        // Should have two entries:
+        // Entry 1: offset 0, 64 bytes
+        // Entry 2: offset 64, 64 bytes
+        // Total: 128 bytes
+        assert_eq!(
+            weights.len(),
+            128,
+            "Two Float16 constants should result in 128-byte weight file"
+        );
+
+        // Verify first entry sentinel at offset 0
+        let sentinel1 = u32::from_le_bytes([weights[0], weights[1], weights[2], weights[3]]);
+        assert_eq!(sentinel1, 0xDEADBEEF, "First entry sentinel");
+
+        // Verify second entry sentinel at offset 64
+        let sentinel2 = u32::from_le_bytes([weights[64], weights[65], weights[66], weights[67]]);
+        assert_eq!(sentinel2, 0xDEADBEEF, "Second entry sentinel");
+    }
+
+    #[test]
+    fn test_float32_constant_no_weight_file() {
+        // Create a graph with Float32 constant (should NOT use weight file)
+        let mut graph = GraphInfo {
+            input_operands: vec![],
+            output_operands: vec![1],
+            operands: vec![],
+            operations: vec![],
+            constant_operand_ids_to_handles: HashMap::new(),
+            id_to_constant_tensor_operand_map: HashMap::new(),
+        };
+
+        // Float32 constant
+        let data = vec![0x00, 0x00, 0x80, 0x3F]; // 1.0 as f32
+        graph.operands.push(Operand {
+            name: Some("constant".to_string()),
+            kind: OperandKind::Constant,
+            descriptor: OperandDescriptor {
+                data_type: DataType::Float32,
+                shape: vec![1],
+                pending_permutation: vec![],
+            },
+        });
+        graph
+            .constant_operand_ids_to_handles
+            .insert(0, ConstantData { data, label: None });
+
+        // Output
+        graph.operands.push(Operand {
+            name: Some("output".to_string()),
+            kind: OperandKind::Output,
+            descriptor: OperandDescriptor {
+                data_type: DataType::Float32,
+                shape: vec![1],
+                pending_permutation: vec![],
+            },
+        });
+
+        // Add relu operation
+        graph.operations.push(Operation {
+            op_type: "relu".to_string(),
+            input_operands: vec![0],
+            output_operand: Some(1),
+            output_operands: vec![],
+            attributes: serde_json::Value::Null,
+            label: None,
+        });
+
+        // Convert
+        let converter = CoremlMlProgramConverter;
+        let result = converter.convert(&graph).unwrap();
+
+        // Verify NO weights_data (Float32 uses immediate values)
+        assert!(
+            result.weights_data.is_none(),
+            "Float32 constants should not use weight file"
+        );
     }
 }
