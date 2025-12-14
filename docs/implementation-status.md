@@ -210,7 +210,13 @@ Analysis of remaining 32 failures against Chromium's WebNN implementation (the W
 - All 32 tests now properly skipped with architectural limitation markers
 
 **Note on CoreML Test Errors:**
-CoreML tests showing "ONNX execution failed" errors is expected behavior. Currently, the CoreML backend uses ONNX Runtime as an intermediate format - graphs are converted to ONNX protobuf and then executed. This means CoreML tests encounter the same ONNX constraints as ONNX tests. Future work may implement direct CoreML execution path bypassing ONNX conversion.
+CoreML tests showing "ONNX execution failed" errors is expected behavior. When both onnx-runtime and coreml-runtime features are enabled, the backend priority is: TensorRT > ONNX > CoreML. This means "CoreML" tests actually use ONNX Runtime for stability.
+
+**Why CoreML isn't used by default:**
+- CoreML executor has bugs causing process crashes (panic on multi-output operations)
+- Cross-platform consistency: ONNX Runtime works on Linux/macOS/Windows
+- CoreML conversion works correctly and can be tested via `execute_with_coreml()` method
+- TODO: Fix CoreML executor bugs before enabling as primary backend on macOS
 
 ---
 
