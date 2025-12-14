@@ -51,6 +51,7 @@ impl PyML {
     /// Args:
     ///     power_preference: Power preference hint ("default", "high-performance", or "low-power")
     ///     accelerated: Whether to use GPU/NPU acceleration (default: true)
+    ///     device_type: Force specific backend ("auto", "cpu", "gpu", "npu") (default: "auto")
     ///
     /// Returns:
     ///     MLContext: A new context for graph operations
@@ -59,9 +60,22 @@ impl PyML {
     ///     The accelerated parameter is a hint, not a guarantee. The platform
     ///     decides the actual device allocation based on runtime conditions.
     ///     Query context.accelerated after creation to check if acceleration is available.
-    #[pyo3(signature = (power_preference="default", accelerated=true))]
-    fn create_context(&self, power_preference: &str, accelerated: bool) -> PyResult<PyMLContext> {
-        Ok(PyMLContext::new(power_preference.to_string(), accelerated))
+    ///     device_type="auto" uses automatic backend selection based on availability.
+    ///     device_type="cpu" forces ONNX CPU backend.
+    ///     device_type="gpu" forces ONNX GPU backend.
+    ///     device_type="npu" forces CoreML backend (macOS only).
+    #[pyo3(signature = (power_preference="default", accelerated=true, device_type="auto"))]
+    fn create_context(
+        &self,
+        power_preference: &str,
+        accelerated: bool,
+        device_type: &str,
+    ) -> PyResult<PyMLContext> {
+        Ok(PyMLContext::new(
+            power_preference.to_string(),
+            accelerated,
+            device_type.to_string(),
+        ))
     }
 }
 
@@ -399,10 +413,44 @@ impl PyMLContext {
 }
 
 impl PyMLContext {
-    fn new(power_preference: String, accelerated_requested: bool) -> Self {
-        // Select backend based on accelerated preference and power preference
-        let (backend, accelerated_available) =
-            Self::select_backend(accelerated_requested, &power_preference);
+    fn new(power_preference: String, accelerated_requested: bool, device_type: String) -> Self {
+        // Force specific backend if requested, otherwise use automatic selection
+        let (backend, accelerated_available) = match device_type.as_str() {
+            "cpu" => {
+                #[cfg(feature = "onnx-runtime")]
+                {
+                    (Backend::OnnxCpu, false)
+                }
+                #[cfg(not(feature = "onnx-runtime"))]
+                {
+                    (Backend::None, false)
+                }
+            }
+            "gpu" => {
+                #[cfg(feature = "onnx-runtime")]
+                {
+                    (Backend::OnnxGpu, true)
+                }
+                #[cfg(not(feature = "onnx-runtime"))]
+                {
+                    (Backend::None, false)
+                }
+            }
+            "npu" => {
+                #[cfg(all(target_os = "macos", feature = "coreml-runtime"))]
+                {
+                    (Backend::CoreML, true)
+                }
+                #[cfg(not(all(target_os = "macos", feature = "coreml-runtime")))]
+                {
+                    (Backend::None, false)
+                }
+            }
+            _ => {
+                // "auto" or unrecognized - use automatic selection
+                Self::select_backend(accelerated_requested, &power_preference)
+            }
+        };
 
         Self {
             power_preference,
