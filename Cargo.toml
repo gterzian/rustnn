@@ -7,6 +7,17 @@ license = "Apache-2.0"
 repository = "https://github.com/tarekziade/rust-webnn-graph"
 keywords = ["webnn", "onnx", "coreml", "tensorrt", "neural-networks"]
 categories = ["science", "api-bindings"]
+exclude = [
+    "site/*",
+    "docs/*",
+    "tests/*",
+    "examples/*.onnx",
+    "examples/mobilenetv2_weights/*",
+    "examples/images/*",
+    ".github/*",
+    "*.md",
+    "!README.md",
+]
 
 [features]
 default = []
