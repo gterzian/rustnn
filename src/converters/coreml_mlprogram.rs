@@ -922,13 +922,33 @@ impl CoremlMlProgramConverter {
 
         match op.op_type.to_lowercase().as_str() {
             // Binary operations: x, y
-            "add" | "sub" | "mul" | "div" | "pow" | "matmul" | "equal" | "greater"
-            | "greaterorequal" | "lesser" | "lesserorequal" | "logicaland" | "logicalor"
-            | "logicalxor" => {
+            "add" | "sub" | "mul" | "div" | "pow" | "equal" | "greater" | "greaterorequal"
+            | "lesser" | "lesserorequal" | "logicaland" | "logicalor" | "logicalxor" => {
                 if input_names.len() >= 2 {
                     inputs.insert("x".to_string(), Self::create_argument(&input_names[0]));
                     inputs.insert("y".to_string(), Self::create_argument(&input_names[1]));
                 }
+            }
+
+            // MatMul operation: x, y, transpose_x, transpose_y
+            // CoreML requires transpose parameters, WebNN doesn't have them so default to false
+            "matmul" => {
+                if input_names.len() >= 2 {
+                    inputs.insert("x".to_string(), Self::create_argument(&input_names[0]));
+                    inputs.insert("y".to_string(), Self::create_argument(&input_names[1]));
+                }
+
+                // Add transpose_x parameter (required by CoreML, defaults to false)
+                inputs.insert(
+                    "transpose_x".to_string(),
+                    Self::create_immediate_bool(false),
+                );
+
+                // Add transpose_y parameter (required by CoreML, defaults to false)
+                inputs.insert(
+                    "transpose_y".to_string(),
+                    Self::create_immediate_bool(false),
+                );
             }
 
             // Gemm operation: General Matrix Multiplication
@@ -1002,8 +1022,18 @@ impl CoremlMlProgramConverter {
                 inputs.insert("axis".to_string(), Self::create_immediate_int(axis as u32));
             }
 
+            // Neg operation: implemented as mul by -1, requires x and y parameters
+            // CoreML neg is actually a mul operation, so we need both operands
+            "neg" => {
+                if !input_names.is_empty() {
+                    inputs.insert("x".to_string(), Self::create_argument(&input_names[0]));
+                }
+                // Add -1.0 as the multiplier (y parameter required by CoreML mul)
+                inputs.insert("y".to_string(), Self::create_immediate_float(-1.0));
+            }
+
             // Unary operations: x
-            "relu" | "sigmoid" | "tanh" | "abs" | "ceil" | "floor" | "round" | "neg" | "sign"
+            "relu" | "sigmoid" | "tanh" | "abs" | "ceil" | "floor" | "round" | "sign"
             | "identity" | "exp" | "log" | "sqrt" | "reciprocal" | "sin" | "cos" | "tan"
             | "asin" | "acos" | "atan" | "sinh" | "cosh" | "asinh" | "acosh" | "atanh" | "erf"
             | "logicalnot" | "softplus" | "softsign" => {
@@ -1096,6 +1126,7 @@ impl CoremlMlProgramConverter {
 
                 // Add permutation parameter (required by CoreML)
                 // If not specified in WebNN, default is to reverse all dimensions
+                // Note: Empty perm array is valid for 0D scalar tensors
                 if let Some(permutation) =
                     op.attributes.get("permutation").and_then(|v| v.as_array())
                 {
@@ -1103,12 +1134,11 @@ impl CoremlMlProgramConverter {
                         .iter()
                         .filter_map(|v| v.as_u64().map(|u| u as u32))
                         .collect();
-                    if !perm_u32.is_empty() {
-                        inputs.insert(
-                            "perm".to_string(),
-                            Self::create_immediate_int_array(&perm_u32),
-                        );
-                    }
+                    // Always add perm parameter, even if empty (for 0D scalars)
+                    inputs.insert(
+                        "perm".to_string(),
+                        Self::create_immediate_int_array(&perm_u32),
+                    );
                 } else {
                     // Default: reverse all dimensions
                     // Get input operand to determine rank
@@ -1117,12 +1147,11 @@ impl CoremlMlProgramConverter {
                             let rank = input_operand.descriptor.shape.len();
                             let default_perm: Vec<u32> =
                                 (0..rank).rev().map(|i| i as u32).collect();
-                            if !default_perm.is_empty() {
-                                inputs.insert(
-                                    "perm".to_string(),
-                                    Self::create_immediate_int_array(&default_perm),
-                                );
-                            }
+                            // Always add perm parameter, even if empty (for 0D scalars)
+                            inputs.insert(
+                                "perm".to_string(),
+                                Self::create_immediate_int_array(&default_perm),
+                            );
                         }
                     }
                 }
