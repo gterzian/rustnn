@@ -237,6 +237,7 @@ impl CoremlMlProgramConverter {
         operand_id: u32,
         operand: &crate::graph::Operand,
         constant_data: &crate::graph::ConstantData,
+        weight_builder: &mut super::WeightFileBuilder,
     ) -> Result<MilOperation, GraphError> {
         use crate::protos::coreml::mil_spec::DataType as MilDataType;
         use crate::protos::coreml::mil_spec::{TensorValue, Value, tensor_value, value};
@@ -293,24 +294,42 @@ impl CoremlMlProgramConverter {
                 // - For non-scalars: writes to weights.bin with 64-byte alignment
                 //
                 // Reference: chromium/src/services/webnn/coreml/graph_builder_coreml.cc
-                //
-                // TODO: Implement weight file mechanism for Float16 non-scalar constants
-                // For now, return error for non-scalar Float16 constants
 
                 let is_scalar = operand.descriptor.shape.is_empty();
+
                 if !is_scalar {
-                    return Err(GraphError::ConversionFailed {
-                        format: "coreml_mlprogram".to_string(),
-                        reason: format!(
-                            "Float16 non-scalar constants require weight file support (not yet implemented). \
-                             Operand shape: {:?}. CoreML requires non-scalar Float16 constants to use \
-                             BlobFileValue with external weights.bin file.",
-                            operand.descriptor.shape
-                        ),
+                    // Non-scalar Float16: add to weight file and return BlobFileValue
+                    let element_count = constant_data.data.len() / 2; // 2 bytes per f16
+                    let offset = weight_builder.add_weight(
+                        operand_id,
+                        element_count,
+                        &constant_data.data,
+                    )?;
+
+                    // Create BlobFileValue reference
+                    let blob_file_value = Value {
+                        doc_string: String::new(),
+                        r#type: output_type.r#type.clone(),
+                        value: Some(value::Value::BlobFileValue(value::BlobFileValue {
+                            file_name: "@model_path/weights/weights.bin".to_string(),
+                            offset,
+                        })),
+                    };
+
+                    // Create const operation with BlobFileValue
+                    let mut attributes = HashMap::new();
+                    attributes.insert("val".to_string(), blob_file_value);
+
+                    return Ok(MilOperation {
+                        r#type: "const".to_string(),
+                        inputs: HashMap::new(),
+                        outputs: vec![output_type],
+                        attributes,
+                        ..Default::default()
                     });
                 }
 
-                // Scalar Float16: store as immediate bytes (this works)
+                // Scalar Float16: store as immediate bytes
                 TensorValue {
                     value: Some(tensor_value::Value::Bytes(tensor_value::RepeatedBytes {
                         values: constant_data.data.clone().into(),
@@ -1777,6 +1796,9 @@ impl super::GraphConverter for CoremlMlProgramConverter {
     }
 
     fn convert(&self, graph_info: &GraphInfo) -> Result<super::ConvertedGraph, GraphError> {
+        // Create weight file builder for Float16 constants
+        let mut weight_builder = super::WeightFileBuilder::new();
+
         // Create MLProgram
         let mut program = Program {
             version: 1,
@@ -1805,8 +1827,13 @@ impl super::GraphConverter for CoremlMlProgramConverter {
                         reason: format!("Constant operand {} not found", operand_id),
                     })?;
 
-            let const_op =
-                Self::create_const_operation(graph_info, *operand_id, operand, constant_data)?;
+            let const_op = Self::create_const_operation(
+                graph_info,
+                *operand_id,
+                operand,
+                constant_data,
+                &mut weight_builder,
+            )?;
             main_block.operations.push(const_op);
         }
 
@@ -1889,11 +1916,18 @@ impl super::GraphConverter for CoremlMlProgramConverter {
                 reason: format!("Failed to encode model: {}", e),
             })?;
 
+        // Finalize weight file if any weights were added
+        let weights_data = if weight_builder.has_weights() {
+            Some(weight_builder.finalize())
+        } else {
+            None
+        };
+
         Ok(super::ConvertedGraph {
             format: "coreml",
             content_type: "application/x-coreml-model",
             data: buffer,
-            weights_data: None, // Will be populated with Float16 weight file in Phase 2
+            weights_data,
         })
     }
 }
