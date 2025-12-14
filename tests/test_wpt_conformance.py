@@ -444,25 +444,46 @@ def test_wpt_conformance(context, backend_name, wpt_test_case, operation):
     # All data types and tensor sizes should be supported
     test_name = wpt_test_case.get("name", "")
 
-    # Skip Float16 inputs with large arrays on CoreML (CoreML/ANE platform limitation)
-    # See: FLOAT16_STATUS.md - CoreML crashes with Float16 inputs >4 elements
+    # Skip Float16 tensors with large arrays on CoreML (CoreML/ANE platform limitation)
+    # See: FLOAT16_STATUS.md - CoreML crashes with Float16 inputs/constants/outputs >4 elements
     # Chromium also skips Float16 tests on Mac: #if !BUILDFLAG(IS_MAC)
     if backend_name == "coreml":
         graph_desc = wpt_test_case.get("graph", {})
+
+        # Check inputs
         inputs_data = graph_desc.get("inputs", {})
         for input_name, input_spec in inputs_data.items():
             descriptor = input_spec.get("descriptor", input_spec)
             dtype = descriptor.get("dataType", "float32")
             shape = descriptor.get("shape", [])
-
-            # Calculate total elements
             element_count = 1
             for dim in shape:
                 element_count *= dim
-
-            # Skip if Float16 input with >4 elements (>8 bytes)
             if dtype == "float16" and element_count > 4:
-                pytest.skip(f"CoreML limitation: Float16 inputs with >{4} elements crash (ANE memory alignment issue)")
+                pytest.skip(f"CoreML limitation: Float16 input with >{4} elements crash (ANE memory alignment issue)")
+
+        # Check constants
+        constants = graph_desc.get("constants", {})
+        for const_name, const_spec in constants.items():
+            descriptor = const_spec.get("descriptor", const_spec)
+            dtype = descriptor.get("dataType", "float32")
+            shape = descriptor.get("shape", [])
+            element_count = 1
+            for dim in shape:
+                element_count *= dim
+            if dtype == "float16" and element_count > 4:
+                pytest.skip(f"CoreML limitation: Float16 constant with >{4} elements crash (ANE memory alignment issue)")
+
+        # Check expected outputs
+        expected_outputs = wpt_test_case.get("expectedOutputs", {})
+        for output_name, output_spec in expected_outputs.items():
+            dtype = output_spec.get("dataType", "float32")
+            shape = output_spec.get("shape", [])
+            element_count = 1
+            for dim in shape:
+                element_count *= dim
+            if dtype == "float16" and element_count > 4:
+                pytest.skip(f"CoreML limitation: Float16 output with >{4} elements crash (ANE memory alignment issue)")
 
     # Skip known architectural limitations (validated against Chromium reference implementation)
     # See: docs/implementation-status.md - Chromium Reference Implementation Comparison
