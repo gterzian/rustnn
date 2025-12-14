@@ -242,63 +242,57 @@ impl OnnxConverter {
         }
     }
 
+    /// Helper: Parse a JSON array attribute as Vec<i64>
+    fn parse_i64_array(op: &Operation, json_key: &str) -> Option<Vec<i64>> {
+        op.attributes
+            .get(json_key)
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_u64().map(|u| u as i64))
+                    .collect()
+            })
+            .filter(|vec: &Vec<i64>| !vec.is_empty())
+    }
+
+    /// Helper: Add an integer array attribute to the attributes vector
+    fn add_ints_attribute(attributes: &mut Vec<AttributeProto>, name: &str, values: Vec<i64>) {
+        if !values.is_empty() {
+            attributes.push(AttributeProto {
+                name: Some(name.to_string()),
+                r#type: Some(AttributeType::Ints as i32),
+                ints: values,
+                ..Default::default()
+            });
+        }
+    }
+
+    /// Helper: Add an integer attribute to the attributes vector
+    fn add_int_attribute(attributes: &mut Vec<AttributeProto>, name: &str, value: i64) {
+        attributes.push(AttributeProto {
+            name: Some(name.to_string()),
+            r#type: Some(AttributeType::Int as i32),
+            i: Some(value),
+            ..Default::default()
+        });
+    }
+
     /// Create ONNX attributes for conv2d operation
     fn create_conv2d_attributes(op: &Operation) -> Vec<AttributeProto> {
         let mut attributes = Vec::new();
 
-        // Parse attributes from JSON
-        if let Some(strides) = op.attributes.get("strides").and_then(|v| v.as_array()) {
-            let strides_i64: Vec<i64> = strides
-                .iter()
-                .filter_map(|v| v.as_u64().map(|u| u as i64))
-                .collect();
-            if !strides_i64.is_empty() {
-                attributes.push(AttributeProto {
-                    name: Some("strides".to_string()),
-                    r#type: Some(AttributeType::Ints as i32),
-                    ints: strides_i64,
-                    ..Default::default()
-                });
-            }
+        // Parse attributes from JSON using helpers
+        if let Some(strides) = Self::parse_i64_array(op, "strides") {
+            Self::add_ints_attribute(&mut attributes, "strides", strides);
         }
-
-        if let Some(dilations) = op.attributes.get("dilations").and_then(|v| v.as_array()) {
-            let dilations_i64: Vec<i64> = dilations
-                .iter()
-                .filter_map(|v| v.as_u64().map(|u| u as i64))
-                .collect();
-            if !dilations_i64.is_empty() {
-                attributes.push(AttributeProto {
-                    name: Some("dilations".to_string()),
-                    r#type: Some(AttributeType::Ints as i32),
-                    ints: dilations_i64,
-                    ..Default::default()
-                });
-            }
+        if let Some(dilations) = Self::parse_i64_array(op, "dilations") {
+            Self::add_ints_attribute(&mut attributes, "dilations", dilations);
         }
-
-        if let Some(pads) = op.attributes.get("pads").and_then(|v| v.as_array()) {
-            let pads_i64: Vec<i64> = pads
-                .iter()
-                .filter_map(|v| v.as_u64().map(|u| u as i64))
-                .collect();
-            if !pads_i64.is_empty() {
-                attributes.push(AttributeProto {
-                    name: Some("pads".to_string()),
-                    r#type: Some(AttributeType::Ints as i32),
-                    ints: pads_i64,
-                    ..Default::default()
-                });
-            }
+        if let Some(pads) = Self::parse_i64_array(op, "pads") {
+            Self::add_ints_attribute(&mut attributes, "pads", pads);
         }
-
         if let Some(groups) = op.attributes.get("groups").and_then(|v| v.as_u64()) {
-            attributes.push(AttributeProto {
-                name: Some("group".to_string()), // Note: ONNX uses "group" not "groups"
-                r#type: Some(AttributeType::Int as i32),
-                i: Some(groups as i64),
-                ..Default::default()
-            });
+            Self::add_int_attribute(&mut attributes, "group", groups as i64); // Note: ONNX uses "group" not "groups"
         }
 
         attributes
@@ -308,95 +302,24 @@ impl OnnxConverter {
     fn create_conv_transpose2d_attributes(op: &Operation) -> Vec<AttributeProto> {
         let mut attributes = Vec::new();
 
-        // Parse attributes from JSON
-        if let Some(strides) = op.attributes.get("strides").and_then(|v| v.as_array()) {
-            let strides_i64: Vec<i64> = strides
-                .iter()
-                .filter_map(|v| v.as_u64().map(|u| u as i64))
-                .collect();
-            if !strides_i64.is_empty() {
-                attributes.push(AttributeProto {
-                    name: Some("strides".to_string()),
-                    r#type: Some(AttributeType::Ints as i32),
-                    ints: strides_i64,
-                    ..Default::default()
-                });
-            }
+        // Parse attributes from JSON using helpers
+        if let Some(strides) = Self::parse_i64_array(op, "strides") {
+            Self::add_ints_attribute(&mut attributes, "strides", strides);
         }
-
-        if let Some(dilations) = op.attributes.get("dilations").and_then(|v| v.as_array()) {
-            let dilations_i64: Vec<i64> = dilations
-                .iter()
-                .filter_map(|v| v.as_u64().map(|u| u as i64))
-                .collect();
-            if !dilations_i64.is_empty() {
-                attributes.push(AttributeProto {
-                    name: Some("dilations".to_string()),
-                    r#type: Some(AttributeType::Ints as i32),
-                    ints: dilations_i64,
-                    ..Default::default()
-                });
-            }
+        if let Some(dilations) = Self::parse_i64_array(op, "dilations") {
+            Self::add_ints_attribute(&mut attributes, "dilations", dilations);
         }
-
-        if let Some(pads) = op.attributes.get("pads").and_then(|v| v.as_array()) {
-            let pads_i64: Vec<i64> = pads
-                .iter()
-                .filter_map(|v| v.as_u64().map(|u| u as i64))
-                .collect();
-            if !pads_i64.is_empty() {
-                attributes.push(AttributeProto {
-                    name: Some("pads".to_string()),
-                    r#type: Some(AttributeType::Ints as i32),
-                    ints: pads_i64,
-                    ..Default::default()
-                });
-            }
+        if let Some(pads) = Self::parse_i64_array(op, "pads") {
+            Self::add_ints_attribute(&mut attributes, "pads", pads);
         }
-
-        // output_padding attribute (specific to transposed convolution)
-        if let Some(output_padding) = op
-            .attributes
-            .get("outputPadding")
-            .and_then(|v| v.as_array())
-        {
-            let output_padding_i64: Vec<i64> = output_padding
-                .iter()
-                .filter_map(|v| v.as_u64().map(|u| u as i64))
-                .collect();
-            if !output_padding_i64.is_empty() {
-                attributes.push(AttributeProto {
-                    name: Some("output_padding".to_string()),
-                    r#type: Some(AttributeType::Ints as i32),
-                    ints: output_padding_i64,
-                    ..Default::default()
-                });
-            }
+        if let Some(output_padding) = Self::parse_i64_array(op, "outputPadding") {
+            Self::add_ints_attribute(&mut attributes, "output_padding", output_padding);
         }
-
-        // output_shape attribute (optional, specific to transposed convolution)
-        if let Some(output_sizes) = op.attributes.get("outputSizes").and_then(|v| v.as_array()) {
-            let output_shape_i64: Vec<i64> = output_sizes
-                .iter()
-                .filter_map(|v| v.as_u64().map(|u| u as i64))
-                .collect();
-            if !output_shape_i64.is_empty() {
-                attributes.push(AttributeProto {
-                    name: Some("output_shape".to_string()),
-                    r#type: Some(AttributeType::Ints as i32),
-                    ints: output_shape_i64,
-                    ..Default::default()
-                });
-            }
+        if let Some(output_shape) = Self::parse_i64_array(op, "outputSizes") {
+            Self::add_ints_attribute(&mut attributes, "output_shape", output_shape);
         }
-
         if let Some(groups) = op.attributes.get("groups").and_then(|v| v.as_u64()) {
-            attributes.push(AttributeProto {
-                name: Some("group".to_string()), // Note: ONNX uses "group" not "groups"
-                r#type: Some(AttributeType::Int as i32),
-                i: Some(groups as i64),
-                ..Default::default()
-            });
+            Self::add_int_attribute(&mut attributes, "group", groups as i64); // Note: ONNX uses "group" not "groups"
         }
 
         attributes
@@ -406,69 +329,18 @@ impl OnnxConverter {
     fn create_pool2d_attributes(op: &Operation) -> Vec<AttributeProto> {
         let mut attributes = Vec::new();
 
-        // Parse attributes from JSON
-        if let Some(window_dimensions) = op
-            .attributes
-            .get("windowDimensions")
-            .and_then(|v| v.as_array())
-        {
-            let kernel_shape: Vec<i64> = window_dimensions
-                .iter()
-                .filter_map(|v| v.as_u64().map(|u| u as i64))
-                .collect();
-            if !kernel_shape.is_empty() {
-                attributes.push(AttributeProto {
-                    name: Some("kernel_shape".to_string()),
-                    r#type: Some(AttributeType::Ints as i32),
-                    ints: kernel_shape,
-                    ..Default::default()
-                });
-            }
+        // Parse attributes from JSON using helpers
+        if let Some(kernel_shape) = Self::parse_i64_array(op, "windowDimensions") {
+            Self::add_ints_attribute(&mut attributes, "kernel_shape", kernel_shape);
         }
-
-        if let Some(strides) = op.attributes.get("strides").and_then(|v| v.as_array()) {
-            let strides_i64: Vec<i64> = strides
-                .iter()
-                .filter_map(|v| v.as_u64().map(|u| u as i64))
-                .collect();
-            if !strides_i64.is_empty() {
-                attributes.push(AttributeProto {
-                    name: Some("strides".to_string()),
-                    r#type: Some(AttributeType::Ints as i32),
-                    ints: strides_i64,
-                    ..Default::default()
-                });
-            }
+        if let Some(strides) = Self::parse_i64_array(op, "strides") {
+            Self::add_ints_attribute(&mut attributes, "strides", strides);
         }
-
-        if let Some(dilations) = op.attributes.get("dilations").and_then(|v| v.as_array()) {
-            let dilations_i64: Vec<i64> = dilations
-                .iter()
-                .filter_map(|v| v.as_u64().map(|u| u as i64))
-                .collect();
-            if !dilations_i64.is_empty() {
-                attributes.push(AttributeProto {
-                    name: Some("dilations".to_string()),
-                    r#type: Some(AttributeType::Ints as i32),
-                    ints: dilations_i64,
-                    ..Default::default()
-                });
-            }
+        if let Some(dilations) = Self::parse_i64_array(op, "dilations") {
+            Self::add_ints_attribute(&mut attributes, "dilations", dilations);
         }
-
-        if let Some(pads) = op.attributes.get("pads").and_then(|v| v.as_array()) {
-            let pads_i64: Vec<i64> = pads
-                .iter()
-                .filter_map(|v| v.as_u64().map(|u| u as i64))
-                .collect();
-            if !pads_i64.is_empty() {
-                attributes.push(AttributeProto {
-                    name: Some("pads".to_string()),
-                    r#type: Some(AttributeType::Ints as i32),
-                    ints: pads_i64,
-                    ..Default::default()
-                });
-            }
+        if let Some(pads) = Self::parse_i64_array(op, "pads") {
+            Self::add_ints_attribute(&mut attributes, "pads", pads);
         }
 
         attributes
@@ -478,33 +350,16 @@ impl OnnxConverter {
     fn create_reduce_attributes(op: &Operation) -> Vec<AttributeProto> {
         let mut attributes = Vec::new();
 
-        // Parse attributes from JSON
-        if let Some(axes) = op.attributes.get("axes").and_then(|v| v.as_array()) {
-            let axes_i64: Vec<i64> = axes
-                .iter()
-                .filter_map(|v| v.as_u64().map(|u| u as i64))
-                .collect();
-            if !axes_i64.is_empty() {
-                attributes.push(AttributeProto {
-                    name: Some("axes".to_string()),
-                    r#type: Some(AttributeType::Ints as i32),
-                    ints: axes_i64,
-                    ..Default::default()
-                });
-            }
+        // Parse attributes from JSON using helpers
+        if let Some(axes) = Self::parse_i64_array(op, "axes") {
+            Self::add_ints_attribute(&mut attributes, "axes", axes);
         }
-
         if let Some(keep_dims) = op
             .attributes
             .get("keepDimensions")
             .and_then(|v| v.as_bool())
         {
-            attributes.push(AttributeProto {
-                name: Some("keepdims".to_string()),
-                r#type: Some(AttributeType::Int as i32),
-                i: Some(if keep_dims { 1 } else { 0 }),
-                ..Default::default()
-            });
+            Self::add_int_attribute(&mut attributes, "keepdims", if keep_dims { 1 } else { 0 });
         }
 
         attributes
@@ -535,19 +390,8 @@ impl OnnxConverter {
     fn create_squeeze_unsqueeze_attributes(op: &Operation) -> Vec<AttributeProto> {
         let mut attributes = Vec::new();
 
-        if let Some(axes) = op.attributes.get("axes").and_then(|v| v.as_array()) {
-            let axes_i64: Vec<i64> = axes
-                .iter()
-                .filter_map(|v| v.as_u64().map(|u| u as i64))
-                .collect();
-            if !axes_i64.is_empty() {
-                attributes.push(AttributeProto {
-                    name: Some("axes".to_string()),
-                    r#type: Some(AttributeType::Ints as i32),
-                    ints: axes_i64,
-                    ..Default::default()
-                });
-            }
+        if let Some(axes) = Self::parse_i64_array(op, "axes") {
+            Self::add_ints_attribute(&mut attributes, "axes", axes);
         }
 
         attributes
