@@ -29,6 +29,9 @@ build:
 	$(CARGO) build
 
 test:
+	@echo "Running clippy..."
+	$(CARGO) clippy --all-targets -- -D warnings
+	@echo "Running tests..."
 	$(CARGO) test
 
 fmt:
