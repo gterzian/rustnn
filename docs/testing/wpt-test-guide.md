@@ -5,6 +5,7 @@ This guide explains how to use the W3C Web Platform Tests (WPT) for WebNN with t
 ## Overview
 
 The WPT integration provides:
+
 - **Conformance Tests**: Validate that operations produce mathematically correct results
 - **Validation Tests**: Ensure proper error handling and parameter validation
 - **Automatic Test Generation**: Convert official WPT tests to run against our implementation
@@ -13,7 +14,8 @@ The WPT integration provides:
 
 ## Quick Start
 
-### Running WPT Tests
+Running WPT Tests:
+
 
 ```bash
 # Run all WPT conformance tests
@@ -29,18 +31,6 @@ pytest tests/test_wpt_conformance.py -vv --tb=short
 pytest -m wpt -v
 ```
 
-### Current Status
-
-The WPT test infrastructure is fully implemented and ready to use. Currently:
-
-[OK] Test infrastructure complete
-[OK] Tolerance checking (ULP and ATOL)
-[OK] Test data loader and runner
-[OK] Sample test data for reduce_sum
-⏳ Full test data population (requires manual conversion or WPT sync)
-⏳ Graph execution (compute) implementation
-
-Tests currently skip with message: "Graph execution (compute) not yet implemented - graph build validated"
 
 ## Architecture
 
@@ -311,6 +301,7 @@ git commit -m "Update WPT test data from upstream"
 ```
 
 **New Operation Support:**
+
 1. Check WPT for tests: `./scripts/convert_wpt_tests.py --wpt-repo ~/wpt --list-operations`
 2. Add operation to rustnn
 3. Add test data: `./scripts/update_wpt_tests.sh --operations new_op`
@@ -336,6 +327,7 @@ pytest tests/test_wpt_conformance.py --collect-only -v
 **Problem:** Tests fail with ULP distance errors
 
 **Solutions:**
+
 1. **Check expected values:** Verify test data is correct
 2. **Adjust tolerance:** Override in JSON or update `wpt_utils.py` defaults
 3. **Backend differences:** Different backends may need different tolerances
@@ -364,6 +356,7 @@ pytest tests/test_wpt_conformance.py -k "failing_test" -vv --tb=long
 **Problem:** Converter can't parse WPT JavaScript tests
 
 **Solution:**
+
 - The converter provides a template - manually populate test cases
 - Refer to the WPT JavaScript source file
 - Follow the JSON schema in sample files
@@ -422,11 +415,8 @@ Add to `.github/workflows/tests.yml`:
 
 ## Getting Help
 
-- **Issues**: Report problems at https://github.com/your-org/rustnn/issues
+- **Issues**: Report problems at https://github.com/tarekziade/rustnn/issues
 - **Questions**: Ask in discussions or issues
-- **Contributing**: See `CONTRIBUTING.md` (if available)
+- **Contributing**: See `CONTRIBUTING.md`
 
----
 
-**Last Updated:** 2025-12-07
-**Status:** Infrastructure Complete, Test Population In Progress
