@@ -250,6 +250,7 @@ examples/
 ## Implementation Status
 
 **85 WebNN operations fully implemented** across all backends:
+
 - Shape Inference: 85/85 (100%)
 - Python API: 85/85 (100%)
 - ONNX Backend: 85/85 (100%)
