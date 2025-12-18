@@ -116,6 +116,7 @@ print(results["output"])
 * Mirrors WebNN API structure (context → builder → graph).
 * Validation and shape inference happen at `build()` time.
 * Backend lowering happens at `compute()` time.
+* MobileNet demo: [python-demo.txt](python-demo.txt)
 
 ---
 
@@ -180,8 +181,14 @@ flowchart TB
 
 ## Screencast demo
 
-<video controls autoplay loop muted style="max-width: 100%; height: auto;">
-  <source src="https://cotedorclassicjuniors.fr/webnn-demo.mov" type="video/quicktime">
+<video
+  controls
+  autoplay
+  loop
+  muted
+  data-external="true"
+  style="max-width: 100%; height: auto;">
+  <source src="https://cotedorclassicjuniors.fr/webnn-demo.mov" type="video/quicktime" data-external="true">
   Your browser does not support the video tag.
 </video>
 

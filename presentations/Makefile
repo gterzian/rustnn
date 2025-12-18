@@ -52,7 +52,7 @@ slides-selfcontained: $(SLIDE_MD)
 		--include-in-header=$(MERMAID_HEADER) \
 	  --css reveal-overrides.css \
 	  --slide-level=2 \
-	  --self-contained \
+		--embed-resources --standalone \
 	  -o $(OUT_HTML)
 	@echo "Generated (self-contained): $(OUT_HTML)"
 
