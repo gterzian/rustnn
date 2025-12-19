@@ -13,6 +13,7 @@ pub enum DataType {
     Int8,
     Uint8,
     Int64,
+    Uint64,
 }
 
 impl DataType {
@@ -25,6 +26,7 @@ impl DataType {
             DataType::Int8 => 1,
             DataType::Uint8 => 1,
             DataType::Int64 => 8,
+            DataType::Uint64 => 8,
         }
     }
 }

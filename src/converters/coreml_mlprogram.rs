@@ -221,6 +221,7 @@ impl CoremlMlProgramConverter {
             DataType::Uint32 => MilDataType::Uint32 as i32,
             DataType::Uint8 => MilDataType::Uint8 as i32,
             DataType::Int64 => MilDataType::Int64 as i32,
+            DataType::Uint64 => MilDataType::Uint64 as i32,
         })
     }
 
@@ -2107,7 +2108,11 @@ impl CoremlMlProgramConverter {
             }
             // Unsupported types - CoreML feature descriptions only support DOUBLE, FLOAT32, FLOAT16, INT32
             // These must be skipped in tests
-            DataType::Int8 | DataType::Uint8 | DataType::Uint32 | DataType::Int64 => {
+            DataType::Int8
+            | DataType::Uint8
+            | DataType::Uint32
+            | DataType::Int64
+            | DataType::Uint64 => {
                 return Err(GraphError::ConversionFailed {
                     format: "coreml_mlprogram".to_string(),
                     reason: format!(

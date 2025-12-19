@@ -21,6 +21,7 @@ impl OnnxConverter {
             DataType::Float16 => ProtoDataType::Float16,
             DataType::Uint32 => ProtoDataType::Uint32,
             DataType::Int64 => ProtoDataType::Int64,
+            DataType::Uint64 => ProtoDataType::Uint64,
         }
     }
 
