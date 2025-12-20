@@ -635,44 +635,104 @@ git add src/python/context.rs
 git commit -m "Update context implementation"
 ```
 
-## Implemented Operations (as of 2025-12-07)
+## Implemented Operations (as of 2025-12-20)
 
-### [OK] Fully Implemented Operations
+### Implementation Summary
 
-**Binary Operations:**
-- `add`, `sub`, `mul`, `div`, `matmul`
+**WebNN Specification Coverage:**
+- **Total Operations in Spec:** 105
+- **Fully Implemented:** 88 (84%)
+- **Not Yet Implemented:** 13 (12%)
+- **Intentionally Deferred:** 4 (4%) - RNN operations (gru, gruCell, lstm, lstmCell)
+
+**Not Yet Implemented Operations:**
+- `cumulativeSum` - Element-wise cumulative sum along axis
+- `gatherElements` - Gather elements using index tensor
+- `gatherND` - Gather N-dimensional slices
+- `isInfinite` - Check for infinite values
+- `isNaN` - Check for NaN values
+- `l2Pool2d` - L2 pooling (L2 norm within window)
+- `linear` - Linear transformation (alpha*x + beta)
+- `max` - Element-wise maximum of two tensors
+- `min` - Element-wise minimum of two tensors
+- `notEqual` - Element-wise inequality comparison
+- `resample2d` - Resize/resample 2D tensor
+- `reverse` - Reverse elements along axes
+- `roundEven` - Round to nearest even integer
+
+### Fully Implemented Operations by Category
+
+**Binary Element-wise Operations (11):**
+- `add`, `sub`, `mul`, `div`, `pow`, `matmul`
+- `equal`, `greater`, `greaterOrEqual`, `lesser`, `lesserOrEqual`
 - Full NumPy-style broadcasting support
-- Batched matmul with proper shape inference
 
-**Convolution Operations:**
+**Unary Element-wise Operations (28):**
+- **Arithmetic:** `abs`, `ceil`, `floor`, `neg`, `reciprocal`, `sign`, `sqrt`
+- **Trigonometric:** `sin`, `cos`, `tan`, `asin`, `acos`, `atan`
+- **Hyperbolic:** `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh`
+- **Exponential/Log:** `exp`, `log`, `erf`
+- **Rounding:** `round`
+
+**Activation Functions (11):**
+- `relu`, `sigmoid`, `tanh`, `softmax`, `softplus`, `softsign`
+- `elu`, `leakyRelu`, `prelu`, `gelu`
+- `hardSigmoid`, `hardSwish`
+
+**Convolution Operations (2):**
 - `conv2d` - 2D convolution with strides, dilations, padding, groups
-- `conv_transpose2d` - Transposed convolution with output padding/sizes
+- `convTranspose2d` - Transposed convolution with output padding/sizes
 - Supports NCHW and NHWC layouts
 - Depthwise convolution via groups parameter
 
-**Pooling Operations:**
-- `average_pool2d`, `max_pool2d` - 2D pooling with window, stride, dilation, padding
+**Pooling Operations (4):**
+- `averagePool2d`, `maxPool2d` - 2D pooling with window, stride, dilation, padding
 - `global_average_pool`, `global_max_pool` - Global pooling (reduces spatial to 1x1)
 - Supports NCHW and NHWC layouts
 
-**Normalization Operations:**
-- `batch_normalization` - Batch norm with mean, variance, scale, bias, epsilon
-- `instance_normalization` - Instance norm with scale, bias, epsilon
-- `layer_normalization` - Layer norm with scale, bias, epsilon, axes (for transformers)
+**Normalization Operations (3):**
+- `batchNormalization` - Batch norm with mean, variance, scale, bias, epsilon
+- `instanceNormalization` - Instance norm with scale, bias, epsilon
+- `layerNormalization` - Layer norm with scale, bias, epsilon, axes (for transformers)
 
-**Activation Functions:**
-- `relu`, `sigmoid`, `tanh`, `softmax`
+**Reduction Operations (10):**
+- `reduceSum`, `reduceMean`, `reduceMax`, `reduceMin`, `reduceProduct`
+- `reduceL1`, `reduceL2`, `reduceLogSum`, `reduceLogSumExp`, `reduceSumSquare`
+- All support axes parameter and keepDimensions option
 
-**Shape Operations:**
-- `reshape` - Shape transformation with element count validation
-- `input`, `constant` - Input/constant operand creation
+**Shape Manipulation (9):**
+- `reshape`, `transpose`, `expand`, `squeeze`, `unsqueeze`
+- `concat`, `split`, `slice`, `tile`
 
-**Total Tests:** 91 tests (79 passing, 12 skipped without ONNX runtime)
+**Indexing/Gathering (4):**
+- `gather` - Gather elements along axis
+- `scatterElements` - Scatter elements using indices
+- `scatterND` - Scatter N-dimensional updates
+- `where` - Select elements based on condition
 
-###  Not Yet Implemented
+**Matrix Operations (2):**
+- `matmul` - Matrix multiplication with batched support
+- `gemm` - General matrix multiplication (C = alpha*A*B + beta*C)
 
-High priority: Reduction operations (reduceSum, reduceMean, etc.), element-wise ops (abs, exp, log, etc.)
-See TODO.txt for complete list.
+**Quantization (2):**
+- `quantizeLinear` - Quantize float to integer
+- `dequantizeLinear` - Dequantize integer to float
+
+**Other Operations (2):**
+- `cast` - Type conversion between data types
+- `clamp` - Clamp values to range [min, max]
+- `identity` - Identity operation
+- `pad` - Pad tensor with constant/edge/reflection modes
+- `argMax`, `argMin` - Find indices of max/min values
+- `logical_and`, `logical_or`, `logical_xor`, `logical_not` - Logical operations
+- `triangular` - Extract triangular part of matrices
+
+**Test Coverage:**
+- 1350+ ONNX tests passing (100% of supported operations)
+- WPT conformance tests for 44 operations
+- Python API tests covering all 88 implemented operations
+
+For complete implementation status including WPT test coverage, see [docs/development/implementation-status.md](docs/development/implementation-status.md).
 
 ## Documentation
 

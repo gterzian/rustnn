@@ -1,13 +1,15 @@
 # WebNN Implementation Status & Testing Strategy
 
-**Last Updated:** 2025-12-14
+**Last Updated:** 2025-12-20
 
 ## Executive Summary
 
-rustnn implements 85 of ~95 WebNN operations (89% coverage) with full backend support across ONNX Runtime, CoreML MLProgram, and TensorRT.
+rustnn implements 88 of 105 WebNN operations (84% coverage) with full backend support across ONNX Runtime, CoreML MLProgram, and TensorRT.
 
 **Current Status:**
-- ✓ 85 operations fully implemented (Shape Inference + Python API + ONNX + CoreML)
+- ✓ 88 operations fully implemented (Shape Inference + Python API + ONNX + CoreML)
+- ✗ 13 operations not yet implemented (cumulativeSum, gatherElements, gatherND, isInfinite, isNaN, l2Pool2d, linear, max, min, notEqual, resample2d, reverse, roundEven)
+- ⏭ 4 operations intentionally deferred (gru, gruCell, lstm, lstmCell - RNN operations)
 - ✓ WPT test infrastructure in place
 - ✓ WPT test data converter working (44 operations with test data)
 - ✓ 1350 ONNX tests passing (100% of ONNX-supported functionality)
@@ -45,10 +47,12 @@ rustnn implements 85 of ~95 WebNN operations (89% coverage) with full backend su
 | `ceil` | ✓ | ✓ | ✓ | ✓ | ⚠ |
 | `clamp` | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `concat` | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `constant` | ✓ | ✓ | ✓ | ✓ | - |
 | `conv2d` | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `conv_transpose2d` | ✓ | ✓ | ✓ | ✓ | ⚠ |
 | `cos` | ✓ | ✓ | ✓ | ✓ | - |
 | `cosh` | ✓ | ✓ | ✓ | ✓ | - |
+| `cumulativeSum` | ✗ | ✗ | ✗ | ✗ | - |
 | `dequantize_linear` | ✓ | ✓ | ✓ | ✓ | - |
 | `div` | ✓ | ✓ | ✓ | ✓ | ⚠ |
 | `elu` | ✓ | ✓ | ✓ | ✓ | ⚠ |
@@ -58,7 +62,10 @@ rustnn implements 85 of ~95 WebNN operations (89% coverage) with full backend su
 | `expand` | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `floor` | ✓ | ✓ | ✓ | ✓ | ⚠ |
 | `gather` | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `gatherElements` | ✗ | ✗ | ✗ | ✗ | - |
+| `gatherND` | ✗ | ✗ | ✗ | ✗ | - |
 | `gelu` | ✓ | ✓ | ✓ | ✓ | - |
+| `gemm` | ✓ | ✓ | ✓ | ✓ | - |
 | `global_average_pool` | ✓ | ✓ | ✓ | ✓ | - |
 | `global_max_pool` | ✓ | ✓ | ✓ | ✓ | - |
 | `greater` | ✓ | ✓ | ✓ | ✓ | ⚠ |
@@ -68,11 +75,16 @@ rustnn implements 85 of ~95 WebNN operations (89% coverage) with full backend su
 | `hardSigmoid` | ✓ | ✓ | ✓ | ✓ | ⚠ |
 | `hardSwish` | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `identity` | ✓ | ✓ | ✓ | ✓ | - |
+| `input` | ✓ | ✓ | ✓ | ✓ | - |
 | `instance_normalization` | ✓ | ✓ | ✓ | ✓ | ⚠ |
+| `isInfinite` | ✗ | ✗ | ✗ | ✗ | - |
+| `isNaN` | ✗ | ✗ | ✗ | ✗ | - |
 | `layer_normalization` | ✓ | ✓ | ✓ | ✓ | ⚠ |
 | `leakyRelu` | ✓ | ✓ | ✓ | ✓ | ⚠ |
 | `lesser` | ✓ | ✓ | ✓ | ✓ | ⚠ |
 | `lesser_or_equal` | ✓ | ✓ | ✓ | ✓ | ⚠ |
+| `l2Pool2d` | ✗ | ✗ | ✗ | ✗ | - |
+| `linear` | ✗ | ✗ | ✗ | ✗ | - |
 | `log` | ✓ | ✓ | ✓ | ✓ | ⚠ |
 | `logical_and` | ✓ | ✓ | ✓ | ✓ | - |
 | `logical_not` | ✓ | ✓ | ✓ | ✓ | ✓ |
@@ -81,9 +93,12 @@ rustnn implements 85 of ~95 WebNN operations (89% coverage) with full backend su
 | `lstm` | ⏭ | ⏭ | ⏭ | ⏭ | - |
 | `lstmCell` | ⏭ | ⏭ | ⏭ | ⏭ | - |
 | `matmul` | ✓ | ✓ | ✓ | ✓ | ⚠ |
+| `max` | ✗ | ✗ | ✗ | ✗ | - |
 | `max_pool2d` | ✓ | ✓ | ✓ | ✓ | - |
+| `min` | ✗ | ✗ | ✗ | ✗ | - |
 | `mul` | ✓ | ✓ | ✓ | ✓ | ⚠ |
 | `neg` | ✓ | ✓ | ✓ | ✓ | ⚠ |
+| `notEqual` | ✗ | ✗ | ✗ | ✗ | - |
 | `pad` | ✓ | ✓ | ✓ | ✓ | - |
 | `pow` | ✓ | ✓ | ✓ | ✓ | ⚠ |
 | `prelu` | ✓ | ✓ | ✓ | ✓ | - |
@@ -100,8 +115,11 @@ rustnn implements 85 of ~95 WebNN operations (89% coverage) with full backend su
 | `reduce_sum` | ✓ | ✓ | ✓ | ✓ | ⚠ |
 | `reduce_sum_square` | ✓ | ✓ | ✓ | ✓ | ⚠ |
 | `relu` | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `resample2d` | ✗ | ✗ | ✗ | ✗ | - |
 | `reshape` | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `reverse` | ✗ | ✗ | ✗ | ✗ | - |
 | `round` | ✓ | ✓ | ✓ | ✓ | - |
+| `roundEven` | ✗ | ✗ | ✗ | ✗ | - |
 | `scatterElements` | ✓ | ✓ | ✓ | ✓ | - |
 | `scatterND` | ✓ | ✓ | ✓ | ✓ | - |
 | `sigmoid` | ✓ | ✓ | ✓ | ✓ | ⚠ |
@@ -139,16 +157,31 @@ rustnn implements 85 of ~95 WebNN operations (89% coverage) with full backend su
 
 ```
 WebNN Specification Coverage:
-  Total Operations in Spec:      ~95
-  Fully Implemented:              85 (89%)
-  Deferred (RNN):                  4 (lstm, lstmCell, gru, gruCell)
-  Remaining:                      ~6 (specialized activations)
+  Total Operations in Spec:      105
+  Fully Implemented:              88 (84%)
+  Not Yet Implemented:            13 (12%)
+  Deferred (RNN):                  4 (4%) (lstm, lstmCell, gru, gruCell)
+
+Not Yet Implemented Operations (13):
+  - cumulativeSum          - Element-wise cumulative sum along axis
+  - gatherElements         - Gather elements using index tensor
+  - gatherND               - Gather N-dimensional slices
+  - isInfinite             - Check for infinite values
+  - isNaN                  - Check for NaN values
+  - l2Pool2d               - L2 pooling (L2 norm within window)
+  - linear                 - Linear transformation (alpha*x + beta)
+  - max                    - Element-wise maximum of two tensors
+  - min                    - Element-wise minimum of two tensors
+  - notEqual               - Element-wise inequality comparison
+  - resample2d             - Resize/resample 2D tensor
+  - reverse                - Reverse elements along axes
+  - roundEven              - Round to nearest even integer
 
 Implementation Status:
-  Shape Inference:                85/85 ✓ (100%)
-  Python API:                     85/85 ✓ (100%)
-  ONNX Backend:                   85/85 ✓ (100%)
-  CoreML MLProgram:               85/85 ✓ (100%)
+  Shape Inference:                88/88 ✓ (100%)
+  Python API:                     88/88 ✓ (100%)
+  ONNX Backend:                   88/88 ✓ (100%)
+  CoreML MLProgram:               88/88 ✓ (100%)
 
 Test Coverage:
   WPT Test Infrastructure:        ✓ Complete (converter + runner + explicit backend selection)
