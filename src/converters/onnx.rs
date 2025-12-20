@@ -59,6 +59,9 @@ impl OnnxConverter {
             ProtoDataType::Int64 => {
                 tensor.int64_data = vec![value as i64];
             }
+            ProtoDataType::Uint64 => {
+                tensor.uint64_data = vec![value as u64];
+            }
             _ => {
                 tensor.float_data = vec![value];
             }
@@ -1929,7 +1932,11 @@ impl crate::converters::GraphConverter for OnnxConverter {
                     if let Some(operand) = graph.operand(input_id) {
                         matches!(
                             operand.descriptor.data_type,
-                            DataType::Int8 | DataType::Uint8 | DataType::Int32
+                            DataType::Int8
+                                | DataType::Uint8
+                                | DataType::Int32
+                                | DataType::Int64
+                                | DataType::Uint64
                         )
                     } else {
                         false
@@ -1951,7 +1958,11 @@ impl crate::converters::GraphConverter for OnnxConverter {
 
                         if matches!(
                             input_operand.descriptor.data_type,
-                            DataType::Int8 | DataType::Uint8 | DataType::Int32
+                            DataType::Int8
+                                | DataType::Uint8
+                                | DataType::Int32
+                                | DataType::Int64
+                                | DataType::Uint64
                         ) {
                             // Cast to float32
                             let cast_output_name =

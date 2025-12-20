@@ -56,6 +56,37 @@ def load_test_cases_for_operation(operation: str) -> List[Dict[str, Any]]:
         return []
 
 
+def convert_numeric_value(value):
+    """
+    Convert numeric values from WPT test data to Python numbers.
+    Handles JavaScript bigint literals (ending with 'n') and other numeric strings.
+
+    Args:
+        value: The value to convert (can be int, float, str, or other)
+
+    Returns:
+        Converted numeric value or original value if not numeric
+    """
+    if isinstance(value, str):
+        # Handle JavaScript bigint literals (e.g., "9223372036854775807n")
+        if value.endswith('n'):
+            try:
+                return int(value[:-1])
+            except ValueError:
+                return float(value[:-1])
+        # Handle regular numeric strings
+        try:
+            # Try int first
+            if '.' not in value and 'e' not in value.lower():
+                return int(value)
+            else:
+                return float(value)
+        except ValueError:
+            # Not a numeric string, return as-is
+            return value
+    return value
+
+
 def execute_wpt_test_case(context, test_case: Dict[str, Any]) -> Dict[str, np.ndarray]:
     """
     Execute a single WPT test case using the WebNN API.
@@ -116,11 +147,11 @@ def execute_wpt_test_case(context, test_case: Dict[str, Any]) -> Dict[str, np.nd
                     if isinstance(item, str) and item in operands:
                         resolved_list.append(operands[item])
                     else:
-                        resolved_list.append(item)
+                        resolved_list.append(convert_numeric_value(item))
                 resolved_args[arg_name] = resolved_list
             else:
-                # This is a literal value
-                resolved_args[arg_name] = arg_value
+                # This is a literal value - convert numeric strings (including bigints)
+                resolved_args[arg_name] = convert_numeric_value(arg_value)
 
         # Call the appropriate builder method
         result = call_builder_method(builder, op_name, resolved_args)
@@ -419,7 +450,34 @@ def pytest_generate_tests(metafunc):
                 continue
 
             for test_case in test_cases:
-                test_params.append((test_case, operation))
+                # Check if test should be marked as slow
+                marks = []
+                test_name = test_case.get("name", "")
+
+                # Mark tests with "large" in name as slow
+                if "large" in test_name.lower():
+                    marks.append(pytest.mark.slow)
+
+                # Mark tests with large tensor sizes (>100K elements) as slow
+                graph_desc = test_case.get("graph", {})
+                inputs_data = graph_desc.get("inputs", {})
+                for input_name, input_spec in inputs_data.items():
+                    descriptor = input_spec.get("descriptor", input_spec)
+                    shape = descriptor.get("shape", [])
+                    element_count = 1
+                    for dim in shape:
+                        element_count *= dim
+                    if element_count > 100000:  # More than 100K elements
+                        if pytest.mark.slow not in marks:
+                            marks.append(pytest.mark.slow)
+                        break
+
+                # Add test case with or without marks
+                if marks:
+                    test_params.append(pytest.param(test_case, operation, marks=marks))
+                else:
+                    test_params.append((test_case, operation))
+
                 test_ids.append(generate_test_id(operation, test_case))
 
         metafunc.parametrize(
@@ -434,6 +492,7 @@ def test_wpt_conformance(context, backend_name, wpt_test_case, operation):
     Run a single WPT conformance test.
 
     This test is parameterized by pytest_generate_tests to run all WPT test cases.
+    Tests with large inputs are marked as "slow" during parametrization.
     """
     if wpt_test_case is None and operation is None:
         pytest.skip("No WPT test data found. Run: ./scripts/update_wpt_tests.sh")

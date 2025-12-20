@@ -50,6 +50,7 @@ pub enum TensorData {
     Int32(Vec<i32>),
     Uint32(Vec<u32>),
     Int64(Vec<i64>),
+    Uint64(Vec<u64>),
 }
 
 /// Input tensor data for ONNX execution
@@ -304,6 +305,24 @@ pub fn run_onnx_with_inputs(
                     Value::from_array(array).map_err(|e| GraphError::OnnxRuntimeFailed {
                         reason: format!(
                             "failed to create int64 input tensor for {}: {e}",
+                            input.name
+                        ),
+                    })?;
+                SessionInputValue::from(value)
+            }
+            TensorData::Uint64(data) => {
+                let array = ArrayD::from_shape_vec(input.shape.clone(), data).map_err(|e| {
+                    GraphError::OnnxRuntimeFailed {
+                        reason: format!(
+                            "failed to create uint64 input array for {}: {e}",
+                            input.name
+                        ),
+                    }
+                })?;
+                let value =
+                    Value::from_array(array).map_err(|e| GraphError::OnnxRuntimeFailed {
+                        reason: format!(
+                            "failed to create uint64 input tensor for {}: {e}",
                             input.name
                         ),
                     })?;

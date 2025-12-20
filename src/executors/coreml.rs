@@ -623,6 +623,7 @@ fn map_dtype(data_type: DataType) -> Result<i32, GraphError> {
         DataType::Int8 => 1,     // MLMultiArrayDataTypeInt8
         DataType::Uint8 => 1,    // closest available signed byte type
         DataType::Uint32 => 3,   // closest available signed int type
+        DataType::Uint64 => 4,   // closest available signed int type
     };
     Ok(code)
 }
@@ -712,7 +713,7 @@ unsafe fn fill_zero(
                 *v = 0;
             }
         }
-        DataType::Int64 => {
+        DataType::Int64 | DataType::Uint64 => {
             let slice = unsafe { std::slice::from_raw_parts_mut(ptr as *mut i64, count) };
             for v in slice.iter_mut() {
                 *v = 0;

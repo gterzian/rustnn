@@ -74,6 +74,9 @@ def pytest_configure(config):
     config.addinivalue_line(
         "markers", "requires_coreml_runtime: Test requires CoreML Runtime"
     )
+    config.addinivalue_line(
+        "markers", "slow: Tests with large inputs that take longer to run"
+    )
 
 
 @pytest.fixture(scope="session")

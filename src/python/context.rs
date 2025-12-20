@@ -512,6 +512,7 @@ impl PyMLContext {
                 crate::graph::DataType::Int32 => "int32",
                 crate::graph::DataType::Uint32 => "uint32",
                 crate::graph::DataType::Int64 => "int64",
+                crate::graph::DataType::Uint64 => "uint64",
             };
 
             let array_typed = array.call_method1("astype", (dtype_str,))?;
@@ -556,6 +557,10 @@ impl PyMLContext {
                 crate::graph::DataType::Int64 => {
                     let data: Vec<i64> = flat.call_method0("tolist")?.extract()?;
                     crate::executors::onnx::TensorData::Int64(data)
+                }
+                crate::graph::DataType::Uint64 => {
+                    let data: Vec<u64> = flat.call_method0("tolist")?.extract()?;
+                    crate::executors::onnx::TensorData::Uint64(data)
                 }
             };
 
@@ -860,6 +865,7 @@ impl PyMLContext {
                 crate::graph::DataType::Int8 => "int8",
                 crate::graph::DataType::Uint8 => "uint8",
                 crate::graph::DataType::Int64 => "int64",
+                crate::graph::DataType::Uint64 => "uint64",
             };
 
             let zeros = numpy.call_method1("zeros", (shape, dtype_str))?;

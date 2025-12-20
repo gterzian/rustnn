@@ -31,6 +31,7 @@ impl PyMLOperand {
             DataType::Int8 => "int8".to_string(),
             DataType::Uint8 => "uint8".to_string(),
             DataType::Int64 => "int64".to_string(),
+            DataType::Uint64 => "uint64".to_string(),
         }
     }
 
@@ -82,6 +83,8 @@ pub fn parse_data_type(dtype: &str) -> PyResult<DataType> {
         "uint32" => Ok(DataType::Uint32),
         "int8" => Ok(DataType::Int8),
         "uint8" => Ok(DataType::Uint8),
+        "int64" => Ok(DataType::Int64),
+        "uint64" => Ok(DataType::Uint64),
         _ => Err(pyo3::exceptions::PyValueError::new_err(format!(
             "Unsupported data type: {}",
             dtype

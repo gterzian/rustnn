@@ -352,6 +352,31 @@ def format_test_failure(
     return "\n".join(lines)
 
 
+def convert_bigint_values(data):
+    """
+    Recursively convert JavaScript bigint literals (strings ending with 'n')
+    to Python integers in nested data structures.
+
+    Args:
+        data: Data structure (can be list, int, float, str, etc.)
+
+    Returns:
+        Data with bigint strings converted to integers
+    """
+    if isinstance(data, str) and data.endswith('n'):
+        # Convert JavaScript bigint literal to Python int
+        try:
+            return int(data[:-1])
+        except ValueError:
+            return data
+    elif isinstance(data, list):
+        # Recursively convert lists
+        return [convert_bigint_values(item) for item in data]
+    else:
+        # Return other types as-is
+        return data
+
+
 def numpy_array_from_test_data(test_data: Dict[str, Any]) -> np.ndarray:
     """
     Create NumPy array from WPT test data specification.
@@ -363,7 +388,7 @@ def numpy_array_from_test_data(test_data: Dict[str, Any]) -> np.ndarray:
     Returns:
         NumPy array with specified shape and dtype
     """
-    data = test_data["data"]
+    data = convert_bigint_values(test_data["data"])
 
     # Check if shape/dataType are in descriptor or at root level
     if "descriptor" in test_data:
