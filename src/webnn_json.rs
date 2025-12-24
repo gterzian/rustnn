@@ -143,6 +143,7 @@ pub fn to_graph_json(graph: &GraphInfo) -> Result<GraphJson, GraphError> {
     }
 
     Ok(GraphJson {
+        name: Some("graph".to_string()),
         format: "webnn-graph-json".to_string(),
         version: 1,
         inputs,
@@ -301,7 +302,7 @@ pub fn from_graph_json(graph_json: &GraphJson) -> Result<GraphInfo, GraphError> 
                             shape: Vec::new(),            // Will be inferred
                             pending_permutation: Vec::new(),
                         },
-                        kind: OperandKind::Output,
+                        kind: OperandKind::Output, // Mark as Output (intermediate results)
                     });
 
                     Ok::<u32, GraphError>(idx)
@@ -322,27 +323,27 @@ pub fn from_graph_json(graph_json: &GraphJson) -> Result<GraphInfo, GraphError> 
         });
     }
 
-    // Build output operands list from outputs map
+    // Build output operands list from outputs map and mark them as Output
     for operand_ref in graph_json.outputs.values() {
         if let Some(&idx) = operand_map.get(operand_ref) {
             output_operands.push(idx);
-            // Mark operand as output if not already
-            if let Some(operand) = operands.get_mut(idx as usize)
-                && !matches!(operand.kind, OperandKind::Output)
-            {
+            // Mark this operand as an actual graph output
+            if let Some(operand) = operands.get_mut(idx as usize) {
                 operand.kind = OperandKind::Output;
             }
         }
     }
 
-    Ok(GraphInfo {
+    let graph_info = GraphInfo {
         operands,
         input_operands,
         output_operands,
         operations,
         constant_operand_ids_to_handles,
         id_to_constant_tensor_operand_map: HashMap::new(),
-    })
+    };
+
+    Ok(graph_info)
 }
 
 #[cfg(test)]

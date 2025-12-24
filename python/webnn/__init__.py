@@ -32,6 +32,7 @@ from ._rustnn import (
     MLGraph,
     MLTensor,
 )
+from .hub import Hub
 
 
 class AsyncMLContext:
@@ -158,6 +159,7 @@ __all__ = [
     "MLOperand",
     "MLGraph",
     "MLTensor",
+    "Hub",
 ]
 
 __version__ = "0.1.0"

@@ -15,7 +15,8 @@ ORT_LIB_LOCATION ?= $(ORT_LIB_DIR)
 .PHONY: build test fmt run viz onnx coreml coreml-validate onnx-validate validate-all-env \
 	python-dev python-build python-test python-test-fast python-test-wpt python-test-wpt-onnx python-test-wpt-coreml \
 	python-perf python-perf-full python-clean python-example \
-	mobilenet-demo text-gen-demo text-gen-train text-gen-trained text-gen-enhanced text-gen-train-simple \
+	mobilenet-demo mobilenet-serialize mobilenet-serialize-text mobilenet-convert-to-text mobilenet-demo-webnn mobilenet-demo-hub \
+	text-gen-demo text-gen-train text-gen-trained text-gen-enhanced text-gen-train-simple \
 	docs-serve docs-build docs-clean ci-docs \
 	help clean-all
 
@@ -243,6 +244,128 @@ mobilenet-demo: python-dev
 	@echo "All three backends completed successfully!"
 	@echo "========================================================================"
 
+mobilenet-serialize: python-dev
+	@echo "Installing demo dependencies..."
+	@if [ -f .venv-webnn/bin/python ]; then \
+		.venv-webnn/bin/pip install -q Pillow requests numpy; \
+	else \
+		pip install -q Pillow requests numpy; \
+	fi
+	@echo "========================================================================"
+	@echo "Serializing MobileNetV2 to WebNN Graph Format (JSON)"
+	@echo "========================================================================"
+	@if [ -f .venv-webnn/bin/python ]; then \
+		DYLD_LIBRARY_PATH=$(ORT_LIB_DIR) .venv-webnn/bin/python scripts/serialize_mobilenet_to_webnn.py; \
+	else \
+		DYLD_LIBRARY_PATH=$(ORT_LIB_DIR) python scripts/serialize_mobilenet_to_webnn.py; \
+	fi
+
+mobilenet-serialize-text: python-dev
+	@echo "Installing demo dependencies..."
+	@if [ -f .venv-webnn/bin/python ]; then \
+		.venv-webnn/bin/pip install -q numpy; \
+	else \
+		pip install -q numpy; \
+	fi
+	@echo "========================================================================"
+	@echo "Serializing MobileNetV2 to WebNN Text Format + Binary Weights"
+	@echo "========================================================================"
+	@if [ -f .venv-webnn/bin/python ]; then \
+		.venv-webnn/bin/python scripts/serialize_mobilenet_to_webnn_text.py; \
+	else \
+		python scripts/serialize_mobilenet_to_webnn_text.py; \
+	fi
+
+mobilenet-convert-to-text: python-dev
+	@echo "Installing dependencies..."
+	@if [ -f .venv-webnn/bin/python ]; then \
+		.venv-webnn/bin/pip install -q numpy; \
+	else \
+		pip install -q numpy; \
+	fi
+	@if [ ! -f examples/mobilenetv2_complete.webnn ]; then \
+		echo "Error: examples/mobilenetv2_complete.webnn not found"; \
+		echo "Please run 'make mobilenet-serialize' first to create the JSON file"; \
+		exit 1; \
+	fi
+	@echo "========================================================================"
+	@echo "Converting MobileNetV2 JSON to Text Format + Binary Weights"
+	@echo "========================================================================"
+	@if [ -f .venv-webnn/bin/python ]; then \
+		.venv-webnn/bin/python scripts/convert_json_to_text_format.py examples/mobilenetv2_complete.webnn; \
+	else \
+		python scripts/convert_json_to_text_format.py examples/mobilenetv2_complete.webnn; \
+	fi
+	@echo ""
+	@echo "Conversion complete! You can now delete the large JSON file:"
+	@echo "  rm examples/mobilenetv2_complete.webnn"
+
+mobilenet-demo-webnn: python-dev
+	@echo "Installing demo dependencies..."
+	@if [ -f .venv-webnn/bin/python ]; then \
+		.venv-webnn/bin/pip install -q Pillow requests; \
+	else \
+		pip install -q Pillow requests; \
+	fi
+	@if [ ! -f examples/mobilenetv2_complete.webnn ]; then \
+		echo "Serialized graph not found. Running serialization first..."; \
+		$(MAKE) mobilenet-serialize; \
+	fi
+	@echo "========================================================================"
+	@echo "Running MobileNetV2 (WebNN Graph Format) on All Backends"
+	@echo "========================================================================"
+	@echo ""
+	@echo "Backend 1/3: ONNX CPU"
+	@echo "------------------------------------------------------------------------"
+	@if [ -f .venv-webnn/bin/python ]; then \
+		DYLD_LIBRARY_PATH=$(ORT_LIB_DIR) .venv-webnn/bin/python examples/mobilenetv2_from_webnn.py examples/images/test.jpg --backend cpu; \
+	else \
+		DYLD_LIBRARY_PATH=$(ORT_LIB_DIR) python examples/mobilenetv2_from_webnn.py examples/images/test.jpg --backend cpu; \
+	fi
+	@echo ""
+	@echo "Backend 2/3: ONNX GPU"
+	@echo "------------------------------------------------------------------------"
+	@if [ -f .venv-webnn/bin/python ]; then \
+		DYLD_LIBRARY_PATH=$(ORT_LIB_DIR) .venv-webnn/bin/python examples/mobilenetv2_from_webnn.py examples/images/test.jpg --backend gpu; \
+	else \
+		DYLD_LIBRARY_PATH=$(ORT_LIB_DIR) python examples/mobilenetv2_from_webnn.py examples/images/test.jpg --backend gpu; \
+	fi
+	@echo ""
+	@echo "Backend 3/3: CoreML (Neural Engine)"
+	@echo "------------------------------------------------------------------------"
+	@if [ -f .venv-webnn/bin/python ]; then \
+		DYLD_LIBRARY_PATH=$(ORT_LIB_DIR) .venv-webnn/bin/python examples/mobilenetv2_from_webnn.py examples/images/test.jpg --backend coreml; \
+	else \
+		DYLD_LIBRARY_PATH=$(ORT_LIB_DIR) python examples/mobilenetv2_from_webnn.py examples/images/test.jpg --backend coreml; \
+	fi
+	@echo ""
+	@echo "========================================================================"
+	@echo "All three backends completed successfully!"
+	@echo "========================================================================"
+
+mobilenet-demo-hub: python-dev
+	@echo "Installing demo dependencies..."
+	@if [ -f .venv-webnn/bin/python ]; then \
+		.venv-webnn/bin/pip install -q Pillow requests; \
+	else \
+		pip install -q Pillow requests; \
+	fi
+	@echo "========================================================================"
+	@echo "Running MobileNetV2 (Hugging Face Hub)"
+	@echo "========================================================================"
+	@echo ""
+	@echo "Downloading model from Hugging Face Hub: tarekziade/mobilenet-webnn"
+	@echo "------------------------------------------------------------------------"
+	@if [ -f .venv-webnn/bin/python ]; then \
+		DYLD_LIBRARY_PATH=$(ORT_LIB_DIR) .venv-webnn/bin/python examples/mobilenetv2_from_hub.py examples/images/test.jpg --backend cpu; \
+	else \
+		DYLD_LIBRARY_PATH=$(ORT_LIB_DIR) python examples/mobilenetv2_from_hub.py examples/images/test.jpg --backend cpu; \
+	fi
+	@echo ""
+	@echo "========================================================================"
+	@echo "Demo completed successfully!"
+	@echo "========================================================================"
+
 text-gen-demo: python-dev
 	@echo "========================================================================"
 	@echo "Running Text Generation Demo on All Backends"
@@ -420,7 +543,12 @@ help:
 	@echo "  python-perf        - Run quick performance benchmarks"
 	@echo "  python-perf-full   - Run full performance benchmark suite"
 	@echo "  python-example     - Run Python examples"
-	@echo "  mobilenet-demo     - Run MobileNetV2 classifier on all 3 backends"
+	@echo "  mobilenet-demo     - Run MobileNetV2 classifier (builds graph)"
+	@echo "  mobilenet-serialize - Serialize to JSON format (194 MB)"
+	@echo "  mobilenet-serialize-text - Serialize to text + binary (13 MB)"
+	@echo "  mobilenet-convert-to-text - Convert JSON to text format (194MB -> 13MB)"
+	@echo "  mobilenet-demo-webnn - Run MobileNetV2 (loads from webnn-graph)"
+	@echo "  mobilenet-demo-hub - Run MobileNetV2 (downloads from Hugging Face Hub)"
 	@echo "  text-gen-demo      - Run basic text generation with attention"
 	@echo "  text-gen-train     - Train text generation model on sample data"
 	@echo "  text-gen-trained   - Generate text using trained model weights"
