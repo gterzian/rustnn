@@ -30,13 +30,22 @@ class MLContext:
     """Execution context for neural network graphs"""
 
     @property
-    def device_type(self) -> str:
-        """Get the device type"""
+    def power_preference(self) -> str:
+        """Get the power preference hint"""
         ...
 
     @property
-    def power_preference(self) -> str:
-        """Get the power preference"""
+    def accelerated(self) -> bool:
+        """
+        Check if GPU/NPU acceleration is available
+
+        Returns:
+            True if the platform can provide GPU or NPU resources
+
+        Note:
+            This indicates platform capability, not a guarantee of device allocation.
+            The actual execution may still use CPU if needed.
+        """
         ...
 
     def create_graph_builder(self) -> MLGraphBuilder:
@@ -79,6 +88,91 @@ class MLContext:
         Args:
             graph: The MLGraph to convert
             output_path: Path to save the CoreML model
+        """
+        ...
+
+    def dispatch(
+        self,
+        graph: MLGraph,
+        inputs: Dict[str, "MLTensor"],
+        outputs: Dict[str, "MLTensor"]
+    ) -> None:
+        """
+        Dispatch graph execution asynchronously with MLTensor inputs/outputs
+
+        Following the W3C WebNN MLTensor Explainer:
+        https://github.com/webmachinelearning/webnn/blob/main/mltensor-explainer.md
+
+        This method queues the graph for execution and returns immediately.
+        Results are written to output tensors and can be read later with read_tensor().
+
+        Args:
+            graph: The compiled MLGraph to execute
+            inputs: Dictionary mapping input names to MLTensor objects
+            outputs: Dictionary mapping output names to MLTensor objects
+
+        Note:
+            This is currently implemented as synchronous execution.
+            True async execution will be added in future versions.
+        """
+        ...
+
+    def create_tensor(
+        self,
+        shape: List[int],
+        data_type: str,
+        readable: bool = True,
+        writable: bool = True,
+        exportable_to_gpu: bool = False
+    ) -> "MLTensor":
+        """
+        Create a tensor for explicit tensor management
+
+        Following the W3C WebNN MLTensor Explainer:
+        https://github.com/webmachinelearning/webnn/blob/main/mltensor-explainer.md
+
+        Args:
+            shape: Shape of the tensor
+            data_type: Data type string (e.g., "float32")
+            readable: If True, tensor data can be read back to CPU (default: True)
+            writable: If True, tensor data can be written from CPU (default: True)
+            exportable_to_gpu: If True, tensor can be used as GPU texture (default: False)
+
+        Returns:
+            A new MLTensor with the specified properties
+        """
+        ...
+
+    def read_tensor(self, tensor: "MLTensor") -> np.ndarray:
+        """
+        Read data from a tensor into a numpy array
+
+        Follows the W3C WebNN MLTensor Explainer timeline model.
+
+        Args:
+            tensor: The MLTensor to read from (must have readable=True)
+
+        Returns:
+            The tensor data as a numpy array
+
+        Raises:
+            RuntimeError: If tensor is not readable or has been destroyed
+        """
+        ...
+
+    def write_tensor(self, tensor: "MLTensor", data: npt.ArrayLike) -> None:
+        """
+        Write data from a numpy array into a tensor
+
+        Follows the W3C WebNN MLTensor Explainer timeline model.
+
+        Args:
+            tensor: The MLTensor to write to (must have writable=True)
+            data: Numpy array or array-like data to write
+
+        Raises:
+            RuntimeError: If tensor is not writable or has been destroyed
+            ValueError: If data shape doesn't match tensor shape
         """
         ...
 
@@ -250,4 +344,57 @@ class MLGraph:
 
     def get_output_names(self) -> List[str]:
         """Get list of output names"""
+        ...
+
+class MLTensor:
+    """
+    MLTensor represents an opaque typed tensor with data storage
+
+    MLTensor is used for explicit tensor management in WebNN, allowing
+    pre-allocation of input/output buffers and explicit data transfer.
+
+    Following the W3C WebNN MLTensor Explainer:
+    https://github.com/webmachinelearning/webnn/blob/main/mltensor-explainer.md
+    """
+
+    @property
+    def data_type(self) -> str:
+        """Get the data type of the tensor (e.g., 'float32', 'int32')"""
+        ...
+
+    @property
+    def shape(self) -> List[int]:
+        """Get the shape of the tensor"""
+        ...
+
+    @property
+    def size(self) -> int:
+        """Get the total number of elements in the tensor"""
+        ...
+
+    @property
+    def readable(self) -> bool:
+        """Check if tensor data can be read back to CPU"""
+        ...
+
+    @property
+    def writable(self) -> bool:
+        """Check if tensor data can be written from CPU"""
+        ...
+
+    @property
+    def exportable_to_gpu(self) -> bool:
+        """Check if tensor can be exported for use as GPU texture"""
+        ...
+
+    def destroy(self) -> None:
+        """
+        Destroy the tensor and release its resources
+
+        After calling destroy(), the tensor cannot be used for any operations.
+        This follows the W3C WebNN MLTensor Explainer for explicit resource management.
+
+        Raises:
+            RuntimeError: If tensor has already been destroyed
+        """
         ...
