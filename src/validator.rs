@@ -120,7 +120,10 @@ impl<'a> GraphValidator<'a> {
                     self.processed_operands.insert(operand_id);
                 }
                 OperandKind::Output => {
-                    if let Some(name) = operand.name.as_ref() {
+                    // Only treat as a graph output if it is listed in graph.output_operands
+                    if self.graph.output_operands.contains(&operand_id)
+                        && let Some(name) = operand.name.as_ref()
+                    {
                         if name.is_empty() {
                             return Err(GraphError::MissingOutputName {
                                 operand: operand_id,
@@ -236,6 +239,11 @@ impl<'a> GraphValidator<'a> {
                             operand: operand_id,
                         });
                     }
+                }
+                OperandKind::Constant => {
+                    // Unused constants are harmless; skip error to allow conversion of graphs
+                    // that carry extra weight entries.
+                    continue;
                 }
                 _ => {
                     if !self.operand_to_dependents.contains_key(&operand_id) {

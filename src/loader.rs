@@ -3,6 +3,8 @@ use std::fs;
 use std::path::Path;
 use std::sync::OnceLock;
 
+use serde::Deserialize;
+
 use crate::error::GraphError;
 use crate::graph::GraphInfo;
 use crate::webnn_json;
@@ -81,7 +83,7 @@ pub fn load_graph_from_path(path: impl AsRef<Path>) -> Result<GraphInfo, GraphEr
     let contents = fs::read_to_string(path_ref).map_err(|err| GraphError::io(path_ref, err))?;
 
     // Determine format based on file extension
-    let graph_json = if let Some(ext) = path_ref.extension() {
+    let mut graph_json = if let Some(ext) = path_ref.extension() {
         match ext.to_str() {
             Some("webnn") => {
                 // Sanitize identifiers (replace dots with underscores)
@@ -111,6 +113,66 @@ pub fn load_graph_from_path(path: impl AsRef<Path>) -> Result<GraphInfo, GraphEr
             reason: "No file extension found. Use .webnn or .json".to_string(),
         });
     };
+
+    // If a manifest + weights file exist alongside the graph, inline referenced weights
+    // so that downstream conversion has access to raw bytes.
+    if let (Ok(manifest_text), Ok(weights_bytes)) = (
+        fs::read_to_string(path_ref.with_file_name("manifest.json")),
+        fs::read(path_ref.with_file_name("model.weights")),
+    ) {
+        #[derive(Debug, Deserialize)]
+        struct Manifest {
+            #[allow(dead_code)]
+            format: Option<String>,
+            #[allow(dead_code)]
+            version: Option<u32>,
+            #[allow(dead_code)]
+            endianness: Option<String>,
+            tensors: std::collections::HashMap<String, TensorEntry>,
+        }
+
+        #[derive(Debug, Deserialize, Clone)]
+        #[allow(dead_code)]
+        struct TensorEntry {
+            #[serde(rename = "dataType")]
+            data_type: String,
+            shape: Vec<usize>,
+            #[serde(rename = "byteOffset")]
+            byte_offset: usize,
+            #[serde(rename = "byteLength")]
+            byte_length: usize,
+        }
+
+        if let Ok(manifest) = serde_json::from_str::<Manifest>(&manifest_text) {
+            let mut manifest_by_sanitized: std::collections::HashMap<String, TensorEntry> =
+                std::collections::HashMap::new();
+            for (name, entry) in &manifest.tensors {
+                let sanitized = name.replace("::", "__").replace('.', "_");
+                manifest_by_sanitized.insert(sanitized, entry.clone());
+            }
+
+            for (_name, const_decl) in graph_json.consts.iter_mut() {
+                if let webnn_graph::ast::ConstInit::Weights { r#ref } = &const_decl.init {
+                    // Try sanitized lookup first (matches the sanitized graph identifiers)
+                    let entry = manifest_by_sanitized
+                        .get(r#ref)
+                        .cloned()
+                        // Fallback to dot-style lookup if needed
+                        .or_else(|| manifest.tensors.get(&r#ref.replace('_', ".")).cloned());
+
+                    if let Some(t) = entry {
+                        let start = t.byte_offset;
+                        let end = start + t.byte_length;
+                        if end <= weights_bytes.len() {
+                            const_decl.init = webnn_graph::ast::ConstInit::InlineBytes {
+                                bytes: weights_bytes[start..end].to_vec(),
+                            };
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     // Convert to internal GraphInfo format
     webnn_json::from_graph_json(&graph_json)

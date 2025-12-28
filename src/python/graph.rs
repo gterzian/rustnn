@@ -90,6 +90,240 @@ impl PyMLGraph {
             .count()
     }
 
+    /// Count operands with empty shapes that are not constants (likely unknown shapes).
+    fn count_unknown_shapes(&self) -> usize {
+        self.graph_info
+            .operands
+            .iter()
+            .filter(|op| {
+                op.descriptor.shape.is_empty()
+                    && !matches!(op.kind, crate::graph::OperandKind::Constant)
+            })
+            .count()
+    }
+
+    /// Count constant operands with empty shapes (scalar constants).
+    fn count_scalar_constants(&self) -> usize {
+        self.graph_info
+            .operands
+            .iter()
+            .filter(|op| {
+                op.descriptor.shape.is_empty()
+                    && matches!(op.kind, crate::graph::OperandKind::Constant)
+            })
+            .count()
+    }
+
+    /// Count unknown shapes, excluding outputs that are known to be scalar from reduction ops.
+    fn count_unknown_shapes_excluding_scalar_ops(&self) -> usize {
+        use std::collections::HashSet;
+
+        fn parse_i64_array(value: &serde_json::Value) -> Option<Vec<i64>> {
+            let arr = value.as_array()?;
+            let mut out = Vec::with_capacity(arr.len());
+            for v in arr {
+                if let Some(n) = v.as_i64() {
+                    out.push(n);
+                } else if let Some(n) = v.as_u64() {
+                    out.push(n as i64);
+                } else {
+                    return None;
+                }
+            }
+            Some(out)
+        }
+
+        let mut scalar_outputs = HashSet::new();
+        for op in &self.graph_info.operations {
+            let op_type = op.op_type.to_ascii_lowercase();
+            if op_type == "constant" {
+                for output_id in op.get_output_operands() {
+                    scalar_outputs.insert(output_id);
+                }
+                continue;
+            }
+            if !matches!(
+                op_type.as_str(),
+                "reducemean"
+                    | "reducesum"
+                    | "reducemax"
+                    | "reducemin"
+                    | "reduceproduct"
+                    | "reducel1"
+                    | "reducel2"
+                    | "reducelogsum"
+                    | "reducelogsumexp"
+                    | "reducesumsquare"
+            ) {
+                continue;
+            }
+
+            let keep_dimensions = op
+                .attributes
+                .get("keepDimensions")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            if keep_dimensions {
+                continue;
+            }
+
+            let Some(output_id) = op.output_operand else {
+                continue;
+            };
+            let Some(input_id) = op.input_operands.first().copied() else {
+                continue;
+            };
+            let input_shape = &self.graph_info.operands[input_id as usize].descriptor.shape;
+            if input_shape.is_empty() {
+                continue;
+            }
+
+            let axes = op.attributes.get("axes").and_then(parse_i64_array);
+            let Some(axes) = axes else {
+                continue;
+            };
+            let rank = input_shape.len() as i64;
+            let mut normalized = HashSet::new();
+            let mut valid = true;
+            for axis in axes {
+                let mut axis = axis;
+                if axis < 0 {
+                    axis += rank;
+                }
+                if axis < 0 || axis >= rank {
+                    valid = false;
+                    break;
+                }
+                normalized.insert(axis as usize);
+            }
+            if valid && normalized.len() == input_shape.len() {
+                scalar_outputs.insert(output_id);
+            }
+        }
+
+        self.graph_info
+            .operands
+            .iter()
+            .enumerate()
+            .filter(|(idx, op)| {
+                op.descriptor.shape.is_empty()
+                    && !matches!(op.kind, crate::graph::OperandKind::Constant)
+                    && !scalar_outputs.contains(&(*idx as u32))
+            })
+            .count()
+    }
+
+    /// Debug unknown shapes with producer op and input shapes.
+    fn debug_unknown_shapes(&self) -> Vec<String> {
+        use std::collections::HashMap;
+
+        let mut producer: HashMap<u32, (String, Vec<u32>)> = HashMap::new();
+        for op in &self.graph_info.operations {
+            let op_type = op.op_type.clone();
+            let input_ids = op.input_operands.clone();
+            for output_id in op.get_output_operands() {
+                producer.insert(output_id, (op_type.clone(), input_ids.clone()));
+            }
+        }
+
+        let mut out = Vec::new();
+        for (idx, operand) in self.graph_info.operands.iter().enumerate() {
+            let operand_id = idx as u32;
+            if !operand.descriptor.shape.is_empty()
+                || matches!(operand.kind, crate::graph::OperandKind::Constant)
+            {
+                continue;
+            }
+
+            let name = operand
+                .name
+                .clone()
+                .unwrap_or_else(|| format!("operand_{}", operand_id));
+            if let Some((op_type, inputs)) = producer.get(&operand_id) {
+                let mut input_descs = Vec::with_capacity(inputs.len());
+                for input_id in inputs {
+                    let input_op = &self.graph_info.operands[*input_id as usize];
+                    let input_name = input_op
+                        .name
+                        .clone()
+                        .unwrap_or_else(|| format!("operand_{}", input_id));
+                    input_descs.push(format!("{}{:?}", input_name, input_op.descriptor.shape));
+                }
+                out.push(format!(
+                    "{} (id={}, op={}, inputs=[{}])",
+                    name,
+                    operand_id,
+                    op_type,
+                    input_descs.join(", ")
+                ));
+            } else {
+                out.push(format!("{} (id={}, op=<none>)", name, operand_id));
+            }
+        }
+
+        out
+    }
+
+    /// Debug unknown shapes as structured data.
+    fn debug_unknown_shapes_structured(&self, py: Python) -> PyResult<Vec<PyObject>> {
+        use pyo3::types::PyDict;
+        use std::collections::HashMap;
+
+        let mut producer: HashMap<u32, (String, Vec<u32>)> = HashMap::new();
+        for op in &self.graph_info.operations {
+            let op_type = op.op_type.clone();
+            let input_ids = op.input_operands.clone();
+            for output_id in op.get_output_operands() {
+                producer.insert(output_id, (op_type.clone(), input_ids.clone()));
+            }
+        }
+
+        let mut out: Vec<PyObject> = Vec::new();
+        for (idx, operand) in self.graph_info.operands.iter().enumerate() {
+            let operand_id = idx as u32;
+            if !operand.descriptor.shape.is_empty()
+                || matches!(operand.kind, crate::graph::OperandKind::Constant)
+            {
+                continue;
+            }
+
+            let name = operand
+                .name
+                .clone()
+                .unwrap_or_else(|| format!("operand_{}", operand_id));
+            if let Some((op_type, inputs)) = producer.get(&operand_id) {
+                let mut input_descs: Vec<PyObject> = Vec::with_capacity(inputs.len());
+                for input_id in inputs {
+                    let input_op = &self.graph_info.operands[*input_id as usize];
+                    let input_name = input_op
+                        .name
+                        .clone()
+                        .unwrap_or_else(|| format!("operand_{}", input_id));
+                    let entry = PyDict::new_bound(py);
+                    entry.set_item("id", *input_id)?;
+                    entry.set_item("name", input_name)?;
+                    entry.set_item("shape", input_op.descriptor.shape.clone())?;
+                    input_descs.push(entry.into_py(py));
+                }
+                let entry = PyDict::new_bound(py);
+                entry.set_item("id", operand_id)?;
+                entry.set_item("name", name)?;
+                entry.set_item("op", op_type)?;
+                entry.set_item("inputs", input_descs)?;
+                out.push(entry.into_py(py));
+            } else {
+                let entry = PyDict::new_bound(py);
+                entry.set_item("id", operand_id)?;
+                entry.set_item("name", name)?;
+                entry.set_item("op", py.None())?;
+                entry.set_item("inputs", Vec::<PyObject>::new())?;
+                out.push(entry.into_py(py));
+            }
+        }
+
+        Ok(out)
+    }
+
     /// Save the graph to a .webnn JSON file
     ///
     /// Args:
