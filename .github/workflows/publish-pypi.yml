@@ -65,7 +65,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: wheels-linux-${{ matrix.target }}
-          path: dist
+          path: dist/*.whl
+          if-no-files-found: error
 
   # Build wheels for macOS (Intel and Apple Silicon)
   macos:
@@ -103,7 +104,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: wheels-macos-${{ matrix.target }}
-          path: dist
+          path: dist/*.whl
+          if-no-files-found: error
 
   # Build wheels for Windows
   windows:
@@ -143,7 +145,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: wheels-windows-${{ matrix.target }}
-          path: dist
+          path: dist/*.whl
+          if-no-files-found: error
 
   # Build source distribution
   sdist:
@@ -172,7 +175,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: wheels-sdist
-          path: dist
+          path: dist/*.tar.gz
+          if-no-files-found: error
 
   # Publish to PyPI
   release:
@@ -188,15 +192,55 @@ jobs:
     permissions:
       id-token: write # Required for trusted publishing
     steps:
+      - name: Set up Python (for validation scripts)
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
           pattern: wheels-*
-          path: dist
-          merge-multiple: true
+          path: artifacts
 
-      - name: List distribution files
-        run: ls -lh dist/
+      - name: Collect distribution files
+        run: |
+          rm -rf dist
+          mkdir -p dist
+          find artifacts -type f \( -name "*.whl" -o -name "*.tar.gz" \) -print -exec cp -v {} dist/ \;
+          echo "Final dist/:"
+          ls -lh dist/
+
+      - name: Validate wheels are not corrupted
+        run: |
+          python -V
+          python - <<'PY'
+          import glob, zipfile, sys
+          wheels = glob.glob("dist/*.whl")
+          sdists = glob.glob("dist/*.tar.gz")
+          if not wheels and not sdists:
+            print("No distributions found in dist/")
+            sys.exit(1)
+
+          bad = []
+
+          for w in wheels:
+            try:
+              with zipfile.ZipFile(w) as z:
+                badfile = z.testzip()
+                if badfile:
+                  bad.append((w, f"bad entry: {badfile}"))
+            except Exception as e:
+              bad.append((w, str(e)))
+
+          if bad:
+            print("Corrupt distribution(s) detected:")
+            for f, why in bad:
+              print(" -", f, "=>", why)
+            sys.exit(1)
+
+          print(f"OK: {len(wheels)} wheel(s), {len(sdists)} sdist(s)")
+          PY
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
