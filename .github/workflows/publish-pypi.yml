@@ -6,9 +6,9 @@ on:
   workflow_dispatch:
     inputs:
       publish:
-        description: 'Publish to PyPI (true/false)'
+        description: "Publish to PyPI (true/false)"
         required: true
-        default: 'false'
+        default: "false"
 
 permissions:
   contents: read
@@ -28,13 +28,10 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: "3.12"
 
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y docker.io
-          docker --version
+      - name: Check Docker
+        run: docker --python-version
 
       - name: Build wheels (manylinux container via make)
         run: |
@@ -71,7 +68,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: "3.12"
 
       - name: Install protobuf compiler
         run: |
@@ -111,7 +108,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: "3.12"
           architecture: ${{ matrix.target }}
 
       - name: Install protobuf compiler
@@ -150,7 +147,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: "3.12"
 
       - name: Install protobuf compiler
         run: |
@@ -182,7 +179,7 @@ jobs:
       name: pypi
       url: https://pypi.org/project/pywebnn/
     permissions:
-      id-token: write  # Required for trusted publishing
+      id-token: write # Required for trusted publishing
     steps:
       - name: Download all artifacts
         uses: actions/download-artifact@v4
