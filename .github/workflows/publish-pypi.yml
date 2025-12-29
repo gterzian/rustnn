@@ -24,44 +24,19 @@ jobs:
         include:
           - target: x86_64
             runs_on: ubuntu-latest
-            ort_arch: x64
             rust_target: x86_64-unknown-linux-gnu
           - target: aarch64
             runs_on: [self-hosted, Linux, ARM64]
-            ort_arch: aarch64
             rust_target: aarch64-unknown-linux-gnu
     runs-on: ${{ matrix.runs_on }}
     steps:
       - uses: actions/checkout@v4
 
-      # Use maturin-action for the actual wheel build, but keep your Makefile logic
-      # for downloading/staging ONNX Runtime shared libs.
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Install system deps (Linux)
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y protobuf-compiler
-          protoc --version
-
-      - name: Download + stage ONNX Runtime shared libs
-        run: |
-          make onnxruntime-download
-          make python-stage-ort
-        env:
-          ORT_TARBALL: onnxruntime-linux-${{ matrix.ort_arch }}-${{ env.ORT_VERSION }}.tgz
-          ORT_BASE: https://github.com/microsoft/onnxruntime/releases/download/v${{ env.ORT_VERSION }}
-          ORT_VERSION: ${{ env.ORT_VERSION }}
-
       - name: Build wheels (manylinux)
         uses: PyO3/maturin-action@v1
         env:
-          ORT_STRATEGY: system
-          ORT_LIB_LOCATION: target/onnxruntime/onnxruntime-linux-${{ matrix.ort_arch }}-${{ env.ORT_VERSION }}/lib
-          RUSTFLAGS: -L target/onnxruntime/onnxruntime-linux-${{ matrix.ort_arch }}-${{ env.ORT_VERSION }}/lib
+          # Your Makefile now supports skipping ORT staging, which avoids manylinux GLIBC violations.
+          SKIP_ORT_STAGE: "1"
         with:
           command: build
           args: >-
@@ -71,10 +46,6 @@ jobs:
             --manylinux 2_28
             --features python,onnx-runtime,coreml-runtime
           target: ${{ matrix.rust_target }}
-
-      - name: Unstage ONNX Runtime shared libs
-        if: always()
-        run: make python-unstage-ort
 
       - name: Upload wheels
         uses: actions/upload-artifact@v4
