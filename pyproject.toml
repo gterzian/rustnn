@@ -57,7 +57,7 @@ dev = [
 ]
 
 [tool.maturin]
-features = ["python"]
+features = ["python", "onnx-runtime", "coreml-runtime"]
 module-name = "webnn._rustnn"
 python-source = "python"
 
