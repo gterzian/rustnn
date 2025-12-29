@@ -42,6 +42,21 @@ manifest.json        # Weight manifest
 
 The model is automatically downloaded and cached by `huggingface_hub` on first use. Subsequent runs will use the cached version.
 
+### Choosing the model source
+
+By default the demo downloads `tarekziade/all-MiniLM-L6-v2-webnn` from the Hugging Face Hub. You can override this:
+
+```bash
+# Use a different Hub repo
+export MINILM_MODEL_ID=my-user/my-minilm-webnn
+
+# Or use a local directory (must contain model.webnn/model.weights/manifest.json)
+export MINILM_LOCAL_MODEL_DIR=/path/to/local/model
+
+# Troubleshoot backend selection
+python examples/minilm_embeddings.py --debug
+```
+
 ### Using Local Model Files
 
 You can also use a local model directory:

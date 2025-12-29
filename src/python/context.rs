@@ -122,7 +122,11 @@ impl PyMLContext {
             Backend::OnnxCpu | Backend::OnnxGpu => self.compute_onnx(py, graph, inputs),
             Backend::CoreML => self.compute_coreml(py, graph, inputs),
             Backend::TensorRT => self.compute_trtx(py, graph, inputs),
-            Backend::None => self.compute_fallback(py, graph),
+            Backend::None => {
+                return Err(pyo3::exceptions::PyRuntimeError::new_err(
+                    "No backend available: build without onnx-runtime/coreml-runtime/trtx-runtime features",
+                ));
+            }
         }
     }
 
@@ -688,6 +692,58 @@ impl PyMLContext {
         Ok(result.into())
     }
 
+    /// Return backend/feature diagnostics for this context
+    ///
+    /// Useful to understand which backend was selected, which runtime features
+    /// were compiled into the wheel, and whether the selected backend is actually
+    /// available (otherwise the fallback path returns zeros).
+    fn backend_info(&self, py: Python<'_>) -> PyResult<Py<PyDict>> {
+        let info = PyDict::new_bound(py);
+
+        let backend = match self.backend {
+            Backend::OnnxCpu => "onnx_cpu",
+            Backend::OnnxGpu => "onnx_gpu",
+            Backend::CoreML => "coreml",
+            Backend::TensorRT => "tensorrt",
+            Backend::None => "none",
+        };
+
+        let onnx_compiled = cfg!(feature = "onnx-runtime");
+        let coreml_compiled = cfg!(all(target_os = "macos", feature = "coreml-runtime"));
+        let trtx_compiled = cfg!(feature = "trtx-runtime");
+
+        let backend_available = match self.backend {
+            Backend::OnnxCpu | Backend::OnnxGpu => onnx_compiled,
+            Backend::CoreML => coreml_compiled,
+            Backend::TensorRT => trtx_compiled,
+            Backend::None => false,
+        };
+
+        let fallback_reason = if backend == "none" {
+            Some("no backend selected (fallback)")
+        } else if !backend_available {
+            Some("selected backend not compiled into this build")
+        } else {
+            None
+        };
+
+        info.set_item("backend", backend)?;
+        info.set_item("accelerated_available", self.accelerated_available)?;
+        info.set_item("compiled_features", {
+            let compiled = PyDict::new_bound(py);
+            compiled.set_item("onnx_runtime", onnx_compiled)?;
+            compiled.set_item("coreml_runtime", coreml_compiled)?;
+            compiled.set_item("trtx_runtime", trtx_compiled)?;
+            compiled
+        })?;
+        info.set_item("backend_available", backend_available)?;
+        if let Some(reason) = fallback_reason {
+            info.set_item("fallback_reason", reason)?;
+        }
+
+        Ok(info.into())
+    }
+
     fn __repr__(&self) -> String {
         format!(
             "MLContext(accelerated={}, power='{}')",
@@ -1119,43 +1175,7 @@ impl PyMLContext {
         ))
     }
 
-    /// Fallback computation that returns zeros (when no backend available)
-    fn compute_fallback(&self, py: Python, graph: &PyMLGraph) -> PyResult<Py<PyDict>> {
-        let result = PyDict::new_bound(py);
-
-        for output_id in &graph.graph_info.output_operands {
-            let output_op = graph
-                .graph_info
-                .operands
-                .get(*output_id as usize)
-                .ok_or_else(|| {
-                    pyo3::exceptions::PyValueError::new_err(format!(
-                        "Output operand {} not found in graph",
-                        output_id
-                    ))
-                })?;
-
-            let output_name = output_op.name.as_deref().unwrap_or("output");
-
-            let numpy = py.import_bound("numpy")?;
-            let shape = output_op.descriptor.shape.clone();
-            let dtype_str = match output_op.descriptor.data_type {
-                crate::graph::DataType::Float32 => "float32",
-                crate::graph::DataType::Float16 => "float16",
-                crate::graph::DataType::Int32 => "int32",
-                crate::graph::DataType::Uint32 => "uint32",
-                crate::graph::DataType::Int8 => "int8",
-                crate::graph::DataType::Uint8 => "uint8",
-                crate::graph::DataType::Int64 => "int64",
-                crate::graph::DataType::Uint64 => "uint64",
-            };
-
-            let zeros = numpy.call_method1("zeros", (shape, dtype_str))?;
-            result.set_item(output_name, zeros)?;
-        }
-
-        Ok(result.into())
-    }
+    /// Fallback computation removed: we now error when no backend is available.
 
     /// Select the appropriate backend based on accelerated preference and power hint
     ///

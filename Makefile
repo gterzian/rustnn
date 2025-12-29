@@ -1,4 +1,5 @@
 CARGO := cargo
+PYTHON ?= python3.12
 DOT ?= dot
 GRAPH_FILE ?= examples/sample_graph.json
 DOT_PATH ?= target/graph.dot
@@ -9,9 +10,13 @@ COREMLC_PATH ?= target/graph.mlmodelc
 ORT_VERSION ?= 1.23.2
 ORT_BASE ?= https://github.com/microsoft/onnxruntime/releases/download/v$(ORT_VERSION)
 ORT_TARBALL ?= onnxruntime-osx-arm64-$(ORT_VERSION).tgz
+ORT_DIR_NAME_TMP := $(ORT_TARBALL:.tgz=)
+ORT_DIR_NAME_TMP := $(ORT_DIR_NAME_TMP:.tar.gz=)
+ORT_DIR_NAME ?= $(ORT_DIR_NAME_TMP:.zip=)
 ORT_DIR ?= target/onnxruntime
-ORT_LIB_DIR ?= $(ORT_DIR)/onnxruntime-osx-arm64-$(ORT_VERSION)/lib
+ORT_LIB_DIR ?= $(ORT_DIR)/$(ORT_DIR_NAME)/lib
 ORT_LIB_LOCATION ?= $(ORT_LIB_DIR)
+MATURIN_ARGS ?=
 .PHONY: build test fmt run viz onnx coreml coreml-validate onnx-validate validate-all-env \
 	python-dev python-build python-test python-test-fast python-test-wpt python-test-wpt-onnx python-test-wpt-coreml \
 	python-perf python-perf-full python-clean python-example \
@@ -55,7 +60,11 @@ onnxruntime-download:
 		echo "Downloading ONNX Runtime $(ORT_VERSION)..."; \
 		mkdir -p $(ORT_DIR); \
 		curl -L $(ORT_BASE)/$(ORT_TARBALL) -o $(ORT_DIR)/$(ORT_TARBALL); \
-		tar -xzf $(ORT_DIR)/$(ORT_TARBALL) -C $(ORT_DIR); \
+		if echo "$(ORT_TARBALL)" | grep -q '\.zip$$'; then \
+			unzip -q $(ORT_DIR)/$(ORT_TARBALL) -d $(ORT_DIR); \
+		else \
+			tar -xzf $(ORT_DIR)/$(ORT_TARBALL) -C $(ORT_DIR); \
+		fi; \
 		echo "[OK] ONNX Runtime downloaded and extracted"; \
 	fi
 
@@ -87,7 +96,7 @@ validate-all-env: build test onnx-validate coreml-validate
 python-dev: onnxruntime-download
 	@echo "Installing Python package in development mode with all backends..."
 	@if [ ! -d .venv-webnn ]; then \
-		python3.12 -m venv .venv-webnn; \
+		$(PYTHON) -m venv .venv-webnn; \
 		.venv-webnn/bin/pip install --upgrade pip; \
 		.venv-webnn/bin/pip install pytest pytest-asyncio pytest-xdist numpy maturin; \
 	fi
@@ -101,12 +110,18 @@ python-dev: onnxruntime-download
 
 python-build: onnxruntime-download
 	@echo "Building Python wheel with all backends..."
-	pip install maturin
+	$(PYTHON) -m pip install --upgrade pip
+	$(PYTHON) -m pip install maturin
+	@echo "Staging ONNX Runtime dylibs into python package..."
+	@mkdir -p python/webnn
+	cp $(ORT_LIB_DIR)/libonnxruntime*.dylib python/webnn/
 	ORT_STRATEGY=system \
 	ORT_LIB_LOCATION=$(ORT_LIB_LOCATION) \
 	DYLD_LIBRARY_PATH=$(ORT_LIB_DIR) \
 	RUSTFLAGS="-L $(ORT_LIB_DIR)" \
-	maturin build --features python,onnx-runtime,coreml-runtime --release
+	$(PYTHON) -m maturin build $(MATURIN_ARGS) --features python,onnx-runtime,coreml-runtime --release
+	@echo "Cleaning staged ONNX Runtime dylibs..."
+	rm -f python/webnn/libonnxruntime*.dylib
 
 python-test: python-dev
 	@echo "Running Python tests (includes WPT conformance tests)..."

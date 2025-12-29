@@ -34,6 +34,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     config.compile_protos(&coreml_files, &[coreml_dir])?;
     config.compile_protos(&onnx_files, &[onnx_dir])?;
 
+    // Ensure bundled runtime dylibs can be discovered relative to the extension.
+    // We stage libonnxruntime*.dylib into the python/webnn/ package before building wheels.
+    // Add an rpath pointing at @loader_path (macOS) or $ORIGIN (Linux) so the extension
+    // can load the copied runtime without DYLD_LIBRARY_PATH/LD_LIBRARY_PATH.
+    #[cfg(all(feature = "onnx-runtime", target_os = "macos"))]
+    {
+        println!("cargo:rustc-link-arg=-Wl,-rpath,@loader_path");
+    }
+    #[cfg(all(feature = "onnx-runtime", target_os = "linux"))]
+    {
+        println!("cargo:rustc-link-arg=-Wl,-rpath,$ORIGIN");
+    }
+
     println!("cargo:rerun-if-changed=protos");
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-env-changed=OUT_DIR");

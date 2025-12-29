@@ -16,10 +16,21 @@ import os
 import sys
 import numpy as np
 from pathlib import Path
+import importlib.util
+import platform
 
-# Local model cache to avoid network access when running the demo.
-LOCAL_MODEL_DIR = Path("/Users/tarekziade/Dev/all-MiniLM-L6-v2-webnn")
-MODEL_ID = os.environ.get("MINILM_MODEL_ID", str(LOCAL_MODEL_DIR))
+# Default Hugging Face Hub model (downloaded automatically when no local path is set).
+DEFAULT_HUB_MODEL_ID = "tarekziade/all-MiniLM-L6-v2-webnn"
+
+# Optional local override for offline usage; set MINILM_LOCAL_MODEL_DIR to a directory
+# containing model.webnn/model.weights/manifest.json.
+LOCAL_MODEL_DIR_ENV = os.environ.get("MINILM_LOCAL_MODEL_DIR")
+
+# Resolve model id/path with the following priority:
+# 1) MINILM_MODEL_ID (explicit override, can be a Hub id or a local directory path)
+# 2) MINILM_LOCAL_MODEL_DIR (offline local cache)
+# 3) Default Hub model id
+MODEL_ID = os.environ.get("MINILM_MODEL_ID") or LOCAL_MODEL_DIR_ENV or DEFAULT_HUB_MODEL_ID
 # WebNN graph uses static [1, 128] inputs; keep tokenizer config aligned.
 MAX_LEN = 128
 
@@ -32,6 +43,59 @@ except ImportError:
     sys.exit(1)
 
 import webnn
+
+
+def _debug_environment():
+    """Print environment details useful for backend troubleshooting."""
+    print("\n[DEBUG] Environment")
+    print(f"  Python: {sys.version.split()[0]} ({sys.executable})")
+    print(f"  Platform: {platform.platform()}")
+    print(f"  webnn version: {webnn.__version__ if hasattr(webnn, '__version__') else 'unknown'}")
+    print(f"  DYLD_LIBRARY_PATH: {os.environ.get('DYLD_LIBRARY_PATH', '')}")
+    print(f"  MINILM_MODEL_ID: {os.environ.get('MINILM_MODEL_ID', '')}")
+    print(f"  MINILM_LOCAL_MODEL_DIR: {os.environ.get('MINILM_LOCAL_MODEL_DIR', '')}")
+    print(f"  HF_HUB_OFFLINE: {os.environ.get('HF_HUB_OFFLINE', '')}")
+    print(f"  TRANSFORMERS_OFFLINE: {os.environ.get('TRANSFORMERS_OFFLINE', '')}")
+
+    # Locate the webnn package and bundled runtime libs (if any)
+    webnn_spec = importlib.util.find_spec("webnn")
+    if webnn_spec and webnn_spec.submodule_search_locations:
+        webnn_path = Path(list(webnn_spec.submodule_search_locations)[0])
+        rustnn_ext = webnn_path / "_rustnn.cpython-{}.so".format(
+            sys.implementation.cache_tag.split("-", 1)[1]
+        )
+        print(f"  webnn package dir: {webnn_path}")
+        print(f"  webnn extension: {rustnn_ext if rustnn_ext.exists() else 'not found'}")
+        ort_libs = list(webnn_path.glob("**/libonnxruntime*"))
+        coreml_libs = list(webnn_path.glob("**/coreml*.dylib"))
+        print(f"  bundled ORT libs: {ort_libs if ort_libs else 'none found'}")
+        print(f"  bundled CoreML libs: {coreml_libs if coreml_libs else 'none found'}")
+    else:
+        print("  webnn package dir: not found")
+
+
+def _debug_probe_backend(context):
+    """
+    Run a tiny graph to see which backend executes.
+
+    Prints the output and any runtime error so we can tell if we hit a stub
+    (e.g., ONNX Runtime not compiled) or the zeroed fallback.
+    """
+    import numpy as np
+
+    print("\n[DEBUG] Backend probe (1x float32 identity)")
+    try:
+        builder = context.create_graph_builder()
+        x = builder.input("x", [1], "float32")
+        graph = builder.build({"x": x})
+        result = context.compute(graph, {"x": np.array([1.0], dtype=np.float32)})
+        output = result["x"]
+        print(f"  context: {context}")
+        print(f"  output: {output}")
+        if np.allclose(output, 0):
+            print("  [DEBUG] Output is all zeros (likely fallback/no backend)")
+    except Exception as exc:  # noqa: BLE001
+        print(f"  [DEBUG] Compute failed: {exc}")
 
 
 class TransformersEmbedder:
@@ -147,19 +211,22 @@ class WebNNEmbedder:
 
     def __init__(
         self,
-        model_id: str = str(LOCAL_MODEL_DIR),
+        model_id: str = DEFAULT_HUB_MODEL_ID,
         device_type: str = "cpu",
+        debug: bool = False,
     ):
         """
         Initialize the embedder
 
         Args:
             model_id: Local path to directory containing .webnn and .weights files
-                      (defaults to LOCAL_MODEL_DIR), or a Hugging Face model identifier
+                      (defaults to Hugging Face Hub), or a Hugging Face model identifier
             device_type: Device to use ('cpu' or 'gpu')
+            debug: Print backend diagnostics (library paths, probe run)
         """
         self.model_id = model_id
         self.device_type = device_type
+        self.debug = debug
 
         # Initialize tokenizer (from Hugging Face)
         print("[INFO] Loading tokenizer...")
@@ -251,6 +318,8 @@ class WebNNEmbedder:
             context = ml.create_context(power_preference="high-performance", accelerated=True)
 
         print(f"[INFO] Created WebNN context (accelerated={context.accelerated})")
+        if self.debug:
+            _debug_probe_backend(context)
 
         # Check if model_id is a local path or hub identifier
         model_path = Path(self.model_id)
@@ -482,7 +551,15 @@ def main():
             f"(default: {MODEL_ID})"
         ),
     )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Print backend diagnostics (paths, libs, probe graph)",
+    )
     args = parser.parse_args()
+
+    if args.debug:
+        _debug_environment()
 
     print("=" * 70)
     print("all-MiniLM-L6-v2 Text Embeddings Demo")
@@ -553,7 +630,11 @@ def main():
     print("-" * 70)
     try:
         # Use local compliant model
-        webnn_embedder = WebNNEmbedder(model_id=args.model_id, device_type="cpu")
+        webnn_embedder = WebNNEmbedder(
+            model_id=args.model_id,
+            device_type="cpu",
+            debug=args.debug,
+        )
 
         # Generate embeddings with WebNN
         print("\n" + "-" * 70)
@@ -583,9 +664,11 @@ def main():
                 "[INFO] The model may not be uploaded yet to: tarekziade/all-MiniLM-L6-v2-webnn"
             )
 
-            # Try local path as fallback
-            local_path = LOCAL_MODEL_DIR
-            if local_path.exists():
+            # Try local path as fallback if provided via environment
+            local_path = (
+                Path(LOCAL_MODEL_DIR_ENV).expanduser() if LOCAL_MODEL_DIR_ENV else None
+            )
+            if local_path and local_path.exists():
                 print(f"[INFO] Trying local model at: {local_path}")
                 try:
                     webnn_embedder = WebNNEmbedder(
