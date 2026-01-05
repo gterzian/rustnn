@@ -1201,9 +1201,18 @@ impl crate::converters::GraphConverter for OnnxConverter {
                     .attributes
                     .get("data")
                     .and_then(|v| v.as_str())
-                    .ok_or_else(|| GraphError::ConversionFailed {
-                        format: "onnx".to_string(),
-                        reason: "Constant op missing 'data' attribute".to_string(),
+                    .ok_or_else(|| {
+                        if Self::debug_enabled() {
+                            eprintln!("[DEBUG] Constant operation missing 'data' attribute:");
+                            eprintln!("  Operation index: {}", idx);
+                            eprintln!("  Output operand: {}", output_id);
+                            eprintln!("  Attributes: {:?}", op.attributes);
+                            eprintln!("  Label: {:?}", op.label);
+                        }
+                        GraphError::ConversionFailed {
+                            format: "onnx".to_string(),
+                            reason: "Constant op missing 'data' attribute".to_string(),
+                        }
                     })?;
                 let data = STANDARD
                     .decode(data_b64)
