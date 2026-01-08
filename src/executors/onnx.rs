@@ -373,7 +373,7 @@ pub struct OrtDeviceTensor {
     /// ONNX Runtime value stored on device
     value: Value,
     /// Session reference to keep it alive
-    session: std::sync::Arc<Session>,
+    _session: std::sync::Arc<Session>,
     /// Data type
     dtype: crate::graph::DataType,
     /// Tensor shape
@@ -406,7 +406,7 @@ impl OrtDeviceTensor {
 
         Ok(Self {
             value,
-            session,
+            _session: session,
             dtype,
             shape,
             device,

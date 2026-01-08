@@ -35,7 +35,7 @@ endif
 	python-dev python-build python-test python-test-fast python-test-wpt python-test-wpt-onnx python-test-wpt-coreml \
 	python-perf python-perf-full python-clean python-example \
 	mobilenet-demo mobilenet-serialize mobilenet-serialize-text mobilenet-convert-to-text mobilenet-demo-webnn mobilenet-demo-hub \
-	minilm-demo-hub \
+	minilm-demo-hub run-all-demos \
 	text-gen-demo text-gen-train text-gen-trained text-gen-enhanced text-gen-train-simple \
 	docs-serve docs-build docs-clean ci-docs \
 	help clean-all
@@ -408,6 +408,31 @@ minilm-demo-hub: python-dev
 	@echo "Demo completed successfully!"
 	@echo "========================================================================"
 
+run-all-demos: python-dev
+	@echo "========================================================================"
+	@echo "Running All Demos"
+	@echo "========================================================================"
+	@echo ""
+	@echo "Demo 1/3: MiniLM Embeddings (Hugging Face Hub)"
+	@echo "------------------------------------------------------------------------"
+	@$(MAKE) minilm-demo-hub
+	@echo ""
+	@echo "Demo 2/3: MobileNetV2 Image Classification (Hugging Face Hub)"
+	@echo "------------------------------------------------------------------------"
+	@$(MAKE) mobilenet-demo-hub
+	@echo ""
+	@echo "Demo 3/3: KV Cache with Device Tensors"
+	@echo "------------------------------------------------------------------------"
+	@if [ -f .venv-webnn/bin/python ]; then \
+		$(ORT_ENV_VARS) .venv-webnn/bin/python examples/kv_cache_device_tensors.py; \
+	else \
+		$(ORT_ENV_VARS) python examples/kv_cache_device_tensors.py; \
+	fi
+	@echo ""
+	@echo "========================================================================"
+	@echo "All demos completed successfully!"
+	@echo "========================================================================"
+
 text-gen-demo: python-dev
 	@echo "========================================================================"
 	@echo "Running Text Generation Demo on All Backends"
@@ -592,6 +617,7 @@ help:
 	@echo "  mobilenet-demo-webnn - Run MobileNetV2 (loads from webnn-graph)"
 	@echo "  mobilenet-demo-hub - Run MobileNetV2 (downloads from Hugging Face Hub)"
 	@echo "  minilm-demo-hub    - Run all-MiniLM-L6-v2 (downloads from Hugging Face Hub)"
+	@echo "  run-all-demos      - Run all demos (MiniLM + MobileNet + KV cache device tensors)"
 	@echo "  text-gen-demo      - Run basic text generation with attention"
 	@echo "  text-gen-train     - Train text generation model on sample data"
 	@echo "  text-gen-trained   - Generate text using trained model weights"

@@ -134,8 +134,8 @@ jobs:
         env:
           ORT_DIR_NAME: onnxruntime-linux-x64-1.23.2
 
-      - name: Run MiniLM demo
-        run: make minilm-demo-hub
+      - name: Run all demos
+        run: make run-all-demos
         env:
           ORT_DIR_NAME: onnxruntime-linux-x64-1.23.2
 
