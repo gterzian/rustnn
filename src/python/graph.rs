@@ -137,7 +137,7 @@ impl PyMLGraph {
         for op in &self.graph_info.operations {
             let op_type = op.op_type.to_ascii_lowercase();
             if op_type == "constant" {
-                for output_id in op.get_output_operands() {
+                for &output_id in op.output_operands_slice() {
                     scalar_outputs.insert(output_id);
                 }
                 continue;
@@ -221,7 +221,7 @@ impl PyMLGraph {
         for op in &self.graph_info.operations {
             let op_type = op.op_type.clone();
             let input_ids = op.input_operands.clone();
-            for output_id in op.get_output_operands() {
+            for &output_id in op.output_operands_slice() {
                 producer.insert(output_id, (op_type.clone(), input_ids.clone()));
             }
         }
@@ -273,7 +273,7 @@ impl PyMLGraph {
         for op in &self.graph_info.operations {
             let op_type = op.op_type.clone();
             let input_ids = op.input_operands.clone();
-            for output_id in op.get_output_operands() {
+            for &output_id in op.output_operands_slice() {
                 producer.insert(output_id, (op_type.clone(), input_ids.clone()));
             }
         }

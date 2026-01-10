@@ -111,9 +111,9 @@ python-dev: onnxruntime-download
 	@echo "Installing Python package in development mode with all backends..."
 	@if [ ! -d .venv-webnn ]; then \
 		$(PYTHON) -m venv .venv-webnn; \
-		.venv-webnn/bin/pip install --upgrade pip; \
-		.venv-webnn/bin/pip install pytest pytest-asyncio pytest-xdist numpy maturin; \
 	fi
+	.venv-webnn/bin/pip install --upgrade pip
+	.venv-webnn/bin/pip install pytest pytest-asyncio pytest-xdist numpy maturin
 	VIRTUAL_ENV=$(PWD)/.venv-webnn \
 	PATH=$(PWD)/.venv-webnn/bin:$$PATH \
 	$(ORT_ENV_VARS) \

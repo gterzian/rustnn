@@ -91,15 +91,18 @@ pub struct Operation {
 }
 
 impl Operation {
+    /// Borrow all output operand IDs (handles single- and multi-output operations)
+    pub fn output_operands_slice(&self) -> &[u32] {
+        if !self.output_operands.is_empty() {
+            &self.output_operands
+        } else {
+            self.output_operand.as_slice()
+        }
+    }
+
     /// Get all output operand IDs (handles both single and multi-output operations)
     pub fn get_output_operands(&self) -> Vec<u32> {
-        if !self.output_operands.is_empty() {
-            self.output_operands.clone()
-        } else if let Some(id) = self.output_operand {
-            vec![id]
-        } else {
-            Vec::new()
-        }
+        self.output_operands_slice().to_vec()
     }
 }
 

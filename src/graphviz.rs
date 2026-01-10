@@ -73,8 +73,10 @@ pub fn graph_to_dot(graph: &GraphInfo) -> String {
             );
         }
         // Handle both single and multi-output operations
-        for (idx, output_id) in operation.get_output_operands().iter().enumerate() {
-            let label = if operation.get_output_operands().len() > 1 {
+        let outputs = operation.output_operands_slice();
+        let multi_output = outputs.len() > 1;
+        for (idx, &output_id) in outputs.iter().enumerate() {
+            let label = if multi_output {
                 format!("out{}", idx)
             } else {
                 "out".to_string()

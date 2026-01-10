@@ -208,7 +208,7 @@ impl<'a> GraphValidator<'a> {
             }
 
             // Handle both single and multi-output operations
-            for output_id in operation.get_output_operands() {
+            for &output_id in operation.output_operands_slice() {
                 self.graph.operand(output_id).ok_or_else(|| {
                     GraphError::InvalidOperandReference {
                         operation: op_name.clone(),

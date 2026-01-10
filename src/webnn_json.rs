@@ -98,8 +98,10 @@ pub fn to_graph_json(graph: &GraphInfo) -> Result<GraphJson, GraphError> {
             .collect();
 
         // Collect output names
-        let output_operands = operation.get_output_operands();
-        let output_names: Option<Vec<String>> = if !output_operands.is_empty() {
+        let output_operands = operation.output_operands_slice();
+        let output_names: Option<Vec<String>> = if output_operands.is_empty() {
+            None
+        } else {
             Some(
                 output_operands
                     .iter()
@@ -111,8 +113,6 @@ pub fn to_graph_json(graph: &GraphInfo) -> Result<GraphJson, GraphError> {
                     })
                     .collect(),
             )
-        } else {
-            None
         };
 
         // Convert attributes to JSON options
