@@ -33,7 +33,7 @@ struct Cli {
     #[cfg(feature = "onnx-runtime")]
     #[arg(long, requires = "convert")]
     run_onnx: bool,
-    #[cfg(feature = "trtx-runtime")]
+    #[cfg(any(feature = "trtx-runtime-mock", feature = "trtx-runtime"))]
     #[arg(long, requires = "convert")]
     run_trtx: bool,
 }
@@ -91,21 +91,33 @@ fn run() -> Result<(), GraphError> {
                 converted.content_type
             );
         }
-        #[cfg(all(target_os = "macos", feature = "coreml-runtime"))]
-        if cli.convert_output.is_none() && cli.run_coreml && converted.format == "coreml" {
-            println!(
-                "Converted graph to `{}` in-memory (skipping stdout because CoreML execution is requested).",
-                converted.format
-            );
-        }
-        #[cfg(not(all(target_os = "macos", feature = "coreml-runtime")))]
+        // Check if execution is requested (skip stdout write if so)
+        let execution_requested = [
+            false, // default to false
+            #[cfg(all(target_os = "macos", feature = "coreml-runtime"))]
+            cli.run_coreml,
+            #[cfg(feature = "onnx-runtime")]
+            cli.run_onnx,
+            #[cfg(any(feature = "trtx-runtime-mock", feature = "trtx-runtime"))]
+            cli.run_trtx,
+        ]
+        .iter()
+        .any(|x| *x);
+
         if cli.convert_output.is_none() {
-            std::io::stdout()
-                .write_all(&converted.data)
-                .map_err(|err| GraphError::ConversionFailed {
-                    format: converted.format.to_string(),
-                    reason: err.to_string(),
-                })?;
+            if execution_requested {
+                println!(
+                    "Converted graph to `{}` in-memory (skipping stdout because execution is requested).",
+                    converted.format
+                );
+            } else {
+                std::io::stdout()
+                    .write_all(&converted.data)
+                    .map_err(|err| GraphError::ConversionFailed {
+                        format: converted.format.to_string(),
+                        reason: err.to_string(),
+                    })?;
+            }
         }
 
         #[cfg(all(target_os = "macos", feature = "coreml-runtime"))]
@@ -146,32 +158,61 @@ fn run() -> Result<(), GraphError> {
                     format: converted.format.to_string(),
                 });
             }
-            let outputs =
-                rustnn::run_onnx_zeroed(&converted.data, &artifacts.input_names_to_descriptors)?;
+            // Build zeroed inputs
+            let inputs: Vec<rustnn::OnnxInput> = artifacts
+                .input_names_to_descriptors
+                .iter()
+                .map(|(name, desc)| {
+                    let shape: Vec<usize> = desc.shape.iter().map(|&s| s as usize).collect();
+                    let total: usize = shape.iter().product();
+                    rustnn::OnnxInput {
+                        name: name.clone(),
+                        shape,
+                        data: rustnn::TensorData::Float32(vec![0f32; total.max(1)]),
+                    }
+                })
+                .collect();
+
+            let outputs = rustnn::run_onnx_with_inputs(&converted.data, inputs)?;
             println!("Executed ONNX model with zeroed inputs (CPU):");
             for out in outputs {
-                println!(
-                    "  - {}: shape={:?} type={}",
-                    out.name, out.shape, out.data_type
-                );
+                println!("  - {}: shape={:?}", out.name, out.shape);
             }
         }
 
-        #[cfg(feature = "trtx-runtime")]
+        #[cfg(any(feature = "trtx-runtime-mock", feature = "trtx-runtime"))]
         if cli.run_trtx {
-            if converted.format != "onnx" {
+            // Support both ONNX format (parsed by TensorRT) and native trtx format (pre-built engine)
+            if converted.format != "onnx" && converted.format != "trtx" {
                 return Err(GraphError::UnsupportedRuntimeFormat {
                     format: converted.format.to_string(),
                 });
             }
-            let outputs =
-                rustnn::run_trtx_zeroed(&converted.data, &artifacts.input_names_to_descriptors)?;
-            println!("Executed ONNX model with zeroed inputs (TRT-RTX):");
-            for out in outputs {
-                println!(
-                    "  - {}: shape={:?} type={}",
-                    out.name, out.shape, out.data_type
-                );
+            // Build zeroed inputs
+            let inputs: Vec<rustnn::TrtxInput> = artifacts
+                .input_names_to_descriptors
+                .iter()
+                .map(|(name, desc)| {
+                    let shape: Vec<usize> = desc.shape.iter().map(|&s| s as usize).collect();
+                    let total: usize = shape.iter().product();
+                    rustnn::TrtxInput {
+                        name: name.clone(),
+                        shape,
+                        data: vec![0f32; total.max(1)],
+                    }
+                })
+                .collect();
+
+            let outputs = rustnn::run_trtx_with_inputs(&converted.data, inputs)?;
+
+            let model_type = if converted.format == "trtx" {
+                "TensorRT engine"
+            } else {
+                "ONNX model"
+            };
+            println!("Executed {} with zeroed inputs (TRT-RTX):", model_type);
+            for out in &outputs {
+                println!("  - {}: shape={:?}", out.name, out.shape);
             }
         }
     }
