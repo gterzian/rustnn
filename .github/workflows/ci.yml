@@ -65,7 +65,7 @@ jobs:
           python3 -m unittest scripts/test_generate_backend_operator_report.py
 
   rustnnpt-gate:
-    name: RustNNPT Conformance Gate (>=90%)
+    name: RustNNPT Conformance Gate (>=96.1%)
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
     steps:
@@ -103,7 +103,24 @@ jobs:
         run: |
           cargo update -p rustnn --precise "${{ github.event.pull_request.head.sha }}"
 
+      - name: Download ONNX Runtime shared libraries
+        working-directory: rustnn
+        run: |
+          make onnxruntime-download
+          ORT_LIB="$(find target/onnxruntime -type f \( -name 'libonnxruntime.so' -o -name 'libonnxruntime.so.*' -o -name 'libonnxruntime.dylib' -o -name 'onnxruntime.dll' \) | head -n 1)"
+          if [ -z "$ORT_LIB" ]; then
+            echo "Failed to locate ONNX Runtime dynamic library under rustnn/target/onnxruntime."
+            exit 1
+          fi
+          ORT_LIB="$(realpath "$ORT_LIB")"
+          ORT_DIR="$(dirname "$ORT_LIB")"
+          echo "ORT_DYLIB_PATH=$ORT_LIB" >> "$GITHUB_ENV"
+          echo "LD_LIBRARY_PATH=$ORT_DIR:${LD_LIBRARY_PATH:-}" >> "$GITHUB_ENV"
+          echo "DYLD_LIBRARY_PATH=$ORT_DIR:${DYLD_LIBRARY_PATH:-}" >> "$GITHUB_ENV"
+          echo "PATH=$ORT_DIR:$PATH" >> "$GITHUB_ENV"
+
       - name: Run rustnnpt conformance (cpu)
+        continue-on-error: true
         working-directory: rustnnpt
         run: npm run test:wpt:report -- --variants cpu
 
@@ -112,11 +129,15 @@ jobs:
         run: |
           if [ ! -f reports/conformance.json ]; then
             echo "reports/conformance.json missing after conformance run; rerunning with explicit report paths"
-            npm run test:wpt:report -- --variants cpu --report-json reports/conformance.json --report-html reports/conformance.html
+            npm run test:wpt:report -- --variants cpu --report-json reports/conformance.json --report-html reports/conformance.html || true
+          fi
+          if [ ! -f reports/conformance.json ]; then
+            echo "Conformance report is still missing after rerun."
+            exit 1
           fi
           PASS_RATE="$(jq -r '.summary.passRatePct // (if .summary.total > 0 then (.summary.passed * 100 / .summary.total) else 0 end)' reports/conformance.json)"
           echo "rustnnpt pass rate: ${PASS_RATE}%"
-          awk -v p="$PASS_RATE" 'BEGIN { if (p + 0 < 90) { exit 1 } }'
+          awk -v p="$PASS_RATE" 'BEGIN { if (p + 0 < 96.1) { exit 1 } }'
 
       - name: Upload rustnnpt conformance report
         if: always()
