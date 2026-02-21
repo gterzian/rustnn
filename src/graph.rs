@@ -3,6 +3,35 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 use serde_with::{base64::Base64, serde_as};
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[serde(rename_all = "camelCase")]
+pub struct DynamicDimension {
+    pub name: String,
+    pub max_size: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[serde(untagged)]
+pub enum Dimension {
+    Static(u32),
+    Dynamic(DynamicDimension),
+}
+
+pub fn to_dimension_vector(shape: &[u32]) -> Vec<Dimension> {
+    shape.iter().copied().map(Dimension::Static).collect()
+}
+
+pub fn get_static_or_max_size(dim: &Dimension) -> u32 {
+    match dim {
+        Dimension::Static(v) => *v,
+        Dimension::Dynamic(d) => d.max_size,
+    }
+}
+
+pub fn dynamic_inputs_enabled() -> bool {
+    cfg!(feature = "dynamic-inputs")
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum DataType {
@@ -40,19 +69,41 @@ impl DataType {
 pub struct OperandDescriptor {
     pub data_type: DataType,
     #[serde(default)]
-    pub shape: Vec<u32>,
+    pub shape: Vec<Dimension>,
     #[serde(default)]
     pub pending_permutation: Vec<u32>,
 }
 
 impl OperandDescriptor {
+    pub fn has_dynamic_dimensions(&self) -> bool {
+        self.shape
+            .iter()
+            .any(|dim| matches!(dim, Dimension::Dynamic(_)))
+    }
+
+    pub fn static_shape(&self) -> Option<Vec<u32>> {
+        let mut shape = Vec::with_capacity(self.shape.len());
+        for dim in &self.shape {
+            match dim {
+                Dimension::Static(v) => shape.push(*v),
+                Dimension::Dynamic(_) => return None,
+            }
+        }
+        Some(shape)
+    }
+
+    pub fn static_or_max_shape(&self) -> Vec<u32> {
+        self.shape.iter().map(get_static_or_max_size).collect()
+    }
+
     pub fn element_count(&self) -> Option<usize> {
         if self.shape.is_empty() {
             return Some(1);
         }
         let mut count = 1usize;
         for dim in &self.shape {
-            count = count.checked_mul(*dim as usize)?;
+            let size = get_static_or_max_size(dim) as usize;
+            count = count.checked_mul(size)?;
         }
         Some(count)
     }
@@ -147,6 +198,12 @@ impl GraphInfo {
     pub fn operand(&self, id: u32) -> Option<&Operand> {
         self.operands.get(id as usize)
     }
+
+    pub fn has_dynamic_dimensions(&self) -> bool {
+        self.operands
+            .iter()
+            .any(|operand| operand.descriptor.has_dynamic_dimensions())
+    }
 }
 
 #[cfg(test)]
@@ -200,7 +257,7 @@ mod tests {
     fn test_operand_descriptor_element_count() {
         let desc = OperandDescriptor {
             data_type: DataType::Int4,
-            shape: vec![2, 3, 4],
+            shape: to_dimension_vector(&[2, 3, 4]),
             pending_permutation: vec![],
         };
         assert_eq!(desc.element_count(), Some(24));
@@ -210,7 +267,7 @@ mod tests {
     fn test_operand_descriptor_byte_length_int4() {
         let desc = OperandDescriptor {
             data_type: DataType::Int4,
-            shape: vec![10, 10],
+            shape: to_dimension_vector(&[10, 10]),
             pending_permutation: vec![],
         };
         assert_eq!(desc.byte_length(), Some(100));
@@ -220,7 +277,7 @@ mod tests {
     fn test_operand_descriptor_byte_length_uint4() {
         let desc = OperandDescriptor {
             data_type: DataType::Uint4,
-            shape: vec![8, 16],
+            shape: to_dimension_vector(&[8, 16]),
             pending_permutation: vec![],
         };
         assert_eq!(desc.byte_length(), Some(128));
@@ -230,7 +287,7 @@ mod tests {
     fn test_operand_descriptor_byte_length_float32() {
         let desc = OperandDescriptor {
             data_type: DataType::Float32,
-            shape: vec![4, 4],
+            shape: to_dimension_vector(&[4, 4]),
             pending_permutation: vec![],
         };
         assert_eq!(desc.byte_length(), Some(64));
@@ -272,7 +329,7 @@ mod tests {
             kind: OperandKind::Input,
             descriptor: OperandDescriptor {
                 data_type: DataType::Int4,
-                shape: vec![1, 3, 224, 224],
+                shape: to_dimension_vector(&[1, 3, 224, 224]),
                 pending_permutation: vec![],
             },
             name: Some("input".to_string()),
@@ -306,7 +363,7 @@ mod tests {
             kind: OperandKind::Constant,
             descriptor: OperandDescriptor {
                 data_type: DataType::Uint4,
-                shape: vec![64, 64],
+                shape: to_dimension_vector(&[64, 64]),
                 pending_permutation: vec![],
             },
             name: Some("weight".to_string()),

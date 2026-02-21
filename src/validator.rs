@@ -66,6 +66,9 @@ impl<'a> GraphValidator<'a> {
         {
             return Err(GraphError::EmptyGraph);
         }
+        if !crate::graph::dynamic_inputs_enabled() && self.graph.has_dynamic_dimensions() {
+            return Err(GraphError::DynamicInputsFeatureDisabled);
+        }
         if self.graph.operands.len() >= u32::MAX as usize {
             return Err(GraphError::TooManyOperands {
                 count: self.graph.operands.len(),
@@ -378,42 +381,47 @@ impl<'a> GraphValidator<'a> {
         }
 
         // Shape constraints
-        let input_shape = &input_desc.shape;
-        let scale_shape = &scale_desc.shape;
-        let zero_point_shape = &zero_point_desc.shape;
+        let input_shape_dims = &input_desc.shape;
+        let scale_shape_dims = &scale_desc.shape;
+        let zero_point_shape_dims = &zero_point_desc.shape;
+        let input_shape = input_desc.static_or_max_shape();
+        let scale_shape = scale_desc.static_or_max_shape();
         // Intermediate operation outputs may still carry unresolved shape metadata ([]).
         // Treat those as unknown to avoid rejecting valid subgraphs during early validation.
         let input_shape_known =
-            !(input_shape.is_empty() && matches!(input_operand.kind, OperandKind::Output));
+            !(input_shape_dims.is_empty() && matches!(input_operand.kind, OperandKind::Output));
         let output_shape_known =
             !(output_desc.shape.is_empty() && matches!(output_operand.kind, OperandKind::Output));
 
-        if scale_shape.is_empty() {
-            if !zero_point_shape.is_empty() {
+        if scale_shape_dims.is_empty() {
+            if !zero_point_shape_dims.is_empty() {
                 return Err(invalid(format!(
                     "zeroPoint shape {:?} must match scalar scale for per-tensor quantization",
-                    zero_point_shape
+                    zero_point_shape_dims
                 )));
             }
         } else if input_shape_known {
-            if scale_shape.len() != input_shape.len() {
+            if scale_shape_dims.len() != input_shape_dims.len() {
                 return Err(invalid(format!(
                     "scale rank {} must match input rank {}",
-                    scale_shape.len(),
-                    input_shape.len()
+                    scale_shape_dims.len(),
+                    input_shape_dims.len()
                 )));
             }
-            if zero_point_shape != scale_shape {
+            if zero_point_shape_dims != scale_shape_dims {
                 return Err(invalid(format!(
                     "zeroPoint shape {:?} must match scale shape {:?}",
-                    zero_point_shape, scale_shape
+                    zero_point_shape_dims, scale_shape_dims
                 )));
             }
         }
-        if input_shape_known && output_shape_known && output_desc.shape != *input_shape {
+        if input_shape_known
+            && output_shape_known
+            && output_desc.static_or_max_shape() != *input_shape
+        {
             return Err(invalid(format!(
                 "output shape {:?} must match input shape {:?}",
-                output_desc.shape, input_shape
+                output_desc.shape, input_shape_dims
             )));
         }
 
@@ -458,6 +466,10 @@ mod tests {
     use super::*;
     use crate::graph::{ConstantData, GraphInfo, Operand, Operation};
 
+    fn s(shape: &[u32]) -> Vec<crate::graph::Dimension> {
+        crate::graph::to_dimension_vector(shape)
+    }
+
     fn constant_data_for(descriptor: &OperandDescriptor) -> ConstantData {
         let len = descriptor.byte_length().expect("valid byte length");
         ConstantData {
@@ -474,6 +486,8 @@ mod tests {
         input_shape: Vec<u32>,
         scale_shape: Vec<u32>,
     ) -> GraphInfo {
+        let input_shape = crate::graph::to_dimension_vector(&input_shape);
+        let scale_shape = crate::graph::to_dimension_vector(&scale_shape);
         let input_operand = Operand {
             kind: OperandKind::Input,
             descriptor: OperandDescriptor {
@@ -550,6 +564,69 @@ mod tests {
         }
     }
 
+    fn build_dynamic_relu_graph() -> GraphInfo {
+        let dynamic_shape = vec![
+            crate::graph::Dimension::Dynamic(crate::graph::DynamicDimension {
+                name: "batch".to_string(),
+                max_size: 8,
+            }),
+            crate::graph::Dimension::Static(4),
+        ];
+
+        GraphInfo {
+            operands: vec![
+                Operand {
+                    kind: OperandKind::Input,
+                    descriptor: OperandDescriptor {
+                        data_type: DataType::Float32,
+                        shape: dynamic_shape.clone(),
+                        pending_permutation: vec![],
+                    },
+                    name: Some("input".to_string()),
+                },
+                Operand {
+                    kind: OperandKind::Output,
+                    descriptor: OperandDescriptor {
+                        data_type: DataType::Float32,
+                        shape: dynamic_shape,
+                        pending_permutation: vec![],
+                    },
+                    name: Some("output".to_string()),
+                },
+            ],
+            input_operands: vec![0],
+            output_operands: vec![1],
+            operations: vec![Operation {
+                op_type: "relu".to_string(),
+                input_operands: vec![0],
+                output_operand: Some(1),
+                output_operands: vec![],
+                attributes: serde_json::json!({}),
+                label: None,
+            }],
+            constant_operand_ids_to_handles: HashMap::new(),
+            id_to_constant_tensor_operand_map: HashMap::new(),
+            quantized: false,
+        }
+    }
+
+    #[cfg(not(feature = "dynamic-inputs"))]
+    #[test]
+    fn dynamic_shapes_require_opt_in_feature() {
+        let graph = build_dynamic_relu_graph();
+        let validator = GraphValidator::new(&graph, ContextProperties::default());
+        let err = validator.validate().unwrap_err();
+        assert!(matches!(err, GraphError::DynamicInputsFeatureDisabled));
+    }
+
+    #[cfg(feature = "dynamic-inputs")]
+    #[test]
+    fn dynamic_shapes_validate_when_feature_enabled() {
+        let graph = build_dynamic_relu_graph();
+        let validator = GraphValidator::new(&graph, ContextProperties::default());
+        assert!(validator.validate().is_ok());
+    }
+
     #[test]
     fn quantize_per_axis_int8_validates() {
         let graph = build_quantize_graph(
@@ -624,7 +701,7 @@ mod tests {
             kind: OperandKind::Input,
             descriptor: OperandDescriptor {
                 data_type: DataType::Float32,
-                shape: vec![1, 3, 4, 4],
+                shape: s(&[1, 3, 4, 4]),
                 pending_permutation: Vec::new(),
             },
             name: Some("input".to_string()),
@@ -632,7 +709,7 @@ mod tests {
 
         let scale_descriptor = OperandDescriptor {
             data_type: DataType::Float32,
-            shape: vec![1, 3, 1, 1],
+            shape: s(&[1, 3, 1, 1]),
             pending_permutation: Vec::new(),
         };
         let scale_operand = Operand {
@@ -643,7 +720,7 @@ mod tests {
 
         let zero_point_descriptor = OperandDescriptor {
             data_type: DataType::Uint8,
-            shape: vec![1, 3, 1, 1],
+            shape: s(&[1, 3, 1, 1]),
             pending_permutation: Vec::new(),
         };
         let zero_point_operand = Operand {
@@ -739,7 +816,7 @@ mod tests {
                     kind: OperandKind::Input,
                     descriptor: OperandDescriptor {
                         data_type: DataType::Float32,
-                        shape: vec![1, 2],
+                        shape: s(&[1, 2]),
                         pending_permutation: vec![],
                     },
                     name: None, // Missing name
@@ -748,7 +825,7 @@ mod tests {
                     kind: OperandKind::Output,
                     descriptor: OperandDescriptor {
                         data_type: DataType::Float32,
-                        shape: vec![1, 2],
+                        shape: s(&[1, 2]),
                         pending_permutation: vec![],
                     },
                     name: Some("output".to_string()),
@@ -782,7 +859,7 @@ mod tests {
                     kind: OperandKind::Input,
                     descriptor: OperandDescriptor {
                         data_type: DataType::Float32,
-                        shape: vec![1, 2],
+                        shape: s(&[1, 2]),
                         pending_permutation: vec![],
                     },
                     name: Some("".to_string()), // Empty name
@@ -791,7 +868,7 @@ mod tests {
                     kind: OperandKind::Output,
                     descriptor: OperandDescriptor {
                         data_type: DataType::Float32,
-                        shape: vec![1, 2],
+                        shape: s(&[1, 2]),
                         pending_permutation: vec![],
                     },
                     name: Some("output".to_string()),
@@ -825,7 +902,7 @@ mod tests {
                     kind: OperandKind::Input,
                     descriptor: OperandDescriptor {
                         data_type: DataType::Float32,
-                        shape: vec![1, 2],
+                        shape: s(&[1, 2]),
                         pending_permutation: vec![],
                     },
                     name: Some("input".to_string()),
@@ -834,7 +911,7 @@ mod tests {
                     kind: OperandKind::Input,
                     descriptor: OperandDescriptor {
                         data_type: DataType::Float32,
-                        shape: vec![1, 2],
+                        shape: s(&[1, 2]),
                         pending_permutation: vec![],
                     },
                     name: Some("input".to_string()), // Duplicate name
@@ -843,7 +920,7 @@ mod tests {
                     kind: OperandKind::Output,
                     descriptor: OperandDescriptor {
                         data_type: DataType::Float32,
-                        shape: vec![1, 2],
+                        shape: s(&[1, 2]),
                         pending_permutation: vec![],
                     },
                     name: Some("output".to_string()),
@@ -877,7 +954,7 @@ mod tests {
                     kind: OperandKind::Input,
                     descriptor: OperandDescriptor {
                         data_type: DataType::Float32,
-                        shape: vec![1, 2],
+                        shape: s(&[1, 2]),
                         pending_permutation: vec![],
                     },
                     name: Some("input".to_string()),
@@ -886,7 +963,7 @@ mod tests {
                     kind: OperandKind::Output,
                     descriptor: OperandDescriptor {
                         data_type: DataType::Float32,
-                        shape: vec![1, 2],
+                        shape: s(&[1, 2]),
                         pending_permutation: vec![],
                     },
                     name: Some("output".to_string()),
@@ -895,7 +972,7 @@ mod tests {
                     kind: OperandKind::Output,
                     descriptor: OperandDescriptor {
                         data_type: DataType::Float32,
-                        shape: vec![1, 2],
+                        shape: s(&[1, 2]),
                         pending_permutation: vec![],
                     },
                     name: Some("output".to_string()), // Duplicate name
@@ -939,7 +1016,7 @@ mod tests {
                     kind: OperandKind::Input,
                     descriptor: OperandDescriptor {
                         data_type: DataType::Float32,
-                        shape: vec![1, 2],
+                        shape: s(&[1, 2]),
                         pending_permutation: vec![],
                     },
                     name: Some("input".to_string()),
@@ -948,7 +1025,7 @@ mod tests {
                     kind: OperandKind::Constant,
                     descriptor: OperandDescriptor {
                         data_type: DataType::Float32,
-                        shape: vec![2, 2],
+                        shape: s(&[2, 2]),
                         pending_permutation: vec![],
                     },
                     name: None,
@@ -957,7 +1034,7 @@ mod tests {
                     kind: OperandKind::Output,
                     descriptor: OperandDescriptor {
                         data_type: DataType::Float32,
-                        shape: vec![1, 2],
+                        shape: s(&[1, 2]),
                         pending_permutation: vec![],
                     },
                     name: Some("output".to_string()),
@@ -987,7 +1064,7 @@ mod tests {
     fn test_constant_length_mismatch_fails() {
         let constant_descriptor = OperandDescriptor {
             data_type: DataType::Float32,
-            shape: vec![2, 2],
+            shape: s(&[2, 2]),
             pending_permutation: vec![],
         };
 
@@ -1006,7 +1083,7 @@ mod tests {
                     kind: OperandKind::Input,
                     descriptor: OperandDescriptor {
                         data_type: DataType::Float32,
-                        shape: vec![1, 2],
+                        shape: s(&[1, 2]),
                         pending_permutation: vec![],
                     },
                     name: Some("input".to_string()),
@@ -1020,7 +1097,7 @@ mod tests {
                     kind: OperandKind::Output,
                     descriptor: OperandDescriptor {
                         data_type: DataType::Float32,
-                        shape: vec![1, 2],
+                        shape: s(&[1, 2]),
                         pending_permutation: vec![],
                     },
                     name: Some("output".to_string()),
@@ -1059,7 +1136,7 @@ mod tests {
                     kind: OperandKind::Input,
                     descriptor: OperandDescriptor {
                         data_type: DataType::Float32,
-                        shape: vec![100, 100], // 40,000 bytes - exceeds limit
+                        shape: s(&[100, 100]), // 40,000 bytes - exceeds limit
                         pending_permutation: vec![],
                     },
                     name: Some("input".to_string()),
@@ -1068,7 +1145,7 @@ mod tests {
                     kind: OperandKind::Output,
                     descriptor: OperandDescriptor {
                         data_type: DataType::Float32,
-                        shape: vec![100, 100],
+                        shape: s(&[100, 100]),
                         pending_permutation: vec![],
                     },
                     name: Some("output".to_string()),
@@ -1102,7 +1179,7 @@ mod tests {
                     kind: OperandKind::Input,
                     descriptor: OperandDescriptor {
                         data_type: DataType::Float32,
-                        shape: vec![1, 2],
+                        shape: s(&[1, 2]),
                         pending_permutation: vec![],
                     },
                     name: Some("input".to_string()),
@@ -1111,7 +1188,7 @@ mod tests {
                     kind: OperandKind::Output,
                     descriptor: OperandDescriptor {
                         data_type: DataType::Float32,
-                        shape: vec![1, 2],
+                        shape: s(&[1, 2]),
                         pending_permutation: vec![],
                     },
                     name: Some("output".to_string()),
@@ -1145,7 +1222,7 @@ mod tests {
                     kind: OperandKind::Input,
                     descriptor: OperandDescriptor {
                         data_type: DataType::Float32,
-                        shape: vec![1, 2],
+                        shape: s(&[1, 2]),
                         pending_permutation: vec![],
                     },
                     name: Some("input".to_string()),
@@ -1154,7 +1231,7 @@ mod tests {
                     kind: OperandKind::Output,
                     descriptor: OperandDescriptor {
                         data_type: DataType::Float32,
-                        shape: vec![1, 2],
+                        shape: s(&[1, 2]),
                         pending_permutation: vec![],
                     },
                     name: Some("output".to_string()),
@@ -1198,7 +1275,7 @@ mod tests {
                     kind: OperandKind::Input,
                     descriptor: OperandDescriptor {
                         data_type: DataType::Float32,
-                        shape: vec![1, 2],
+                        shape: s(&[1, 2]),
                         pending_permutation: vec![],
                     },
                     name: Some("input".to_string()),
@@ -1207,7 +1284,7 @@ mod tests {
                     kind: OperandKind::Input,
                     descriptor: OperandDescriptor {
                         data_type: DataType::Float32,
-                        shape: vec![1],
+                        shape: s(&[1]),
                         pending_permutation: vec![],
                     },
                     name: Some("optional_input".to_string()),
@@ -1216,7 +1293,7 @@ mod tests {
                     kind: OperandKind::Output,
                     descriptor: OperandDescriptor {
                         data_type: DataType::Float32,
-                        shape: vec![1, 2],
+                        shape: s(&[1, 2]),
                         pending_permutation: vec![],
                     },
                     name: Some("output".to_string()),
@@ -1258,7 +1335,7 @@ mod tests {
                     kind: OperandKind::Input,
                     descriptor: OperandDescriptor {
                         data_type: DataType::Float32,
-                        shape: vec![1, 2],
+                        shape: s(&[1, 2]),
                         pending_permutation: vec![],
                     },
                     name: Some("input".to_string()),
@@ -1267,7 +1344,7 @@ mod tests {
                     kind: OperandKind::Output,
                     descriptor: OperandDescriptor {
                         data_type: DataType::Float32,
-                        shape: vec![1, 2],
+                        shape: s(&[1, 2]),
                         pending_permutation: vec![],
                     },
                     name: Some("output".to_string()),

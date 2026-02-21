@@ -3,6 +3,7 @@
 use std::collections::HashMap;
 use std::sync::Once;
 
+use ndarray::{ArrayD, IxDyn};
 use ort::session::SessionInputValue;
 
 use half;
@@ -12,6 +13,7 @@ use ort::value::Value;
 
 use crate::error::GraphError;
 use crate::graph::OperandDescriptor;
+use crate::runtime_checks::{RuntimeShapeState, TensorKind, validate_shape_data_length};
 
 static INIT: Once = Once::new();
 
@@ -51,6 +53,21 @@ pub enum TensorData {
     Uint32(Vec<u32>),
     Int64(Vec<i64>),
     Uint64(Vec<u64>),
+}
+
+impl TensorData {
+    fn len(&self) -> usize {
+        match self {
+            TensorData::Float32(v) => v.len(),
+            TensorData::Float16(v) => v.len(),
+            TensorData::Int8(v) => v.len(),
+            TensorData::Uint8(v) => v.len(),
+            TensorData::Int32(v) => v.len(),
+            TensorData::Uint32(v) => v.len(),
+            TensorData::Int64(v) => v.len(),
+            TensorData::Uint64(v) => v.len(),
+        }
+    }
 }
 
 /// Input tensor data for ONNX execution
@@ -160,6 +177,35 @@ pub fn run_onnx_with_inputs(
     model_bytes: &[u8],
     inputs: Vec<OnnxInput>,
 ) -> Result<Vec<OnnxOutputWithData>, GraphError> {
+    run_onnx_with_inputs_impl(model_bytes, inputs, None, None)
+}
+
+/// Run ONNX model with runtime descriptor checks for dynamic dimensions.
+///
+/// Enforces:
+/// - actual tensor shape matches descriptor (rank/static dims)
+/// - dynamic dimensions do not exceed maxSize
+/// - same-named dynamic dimensions are equal across inputs and outputs
+pub fn run_onnx_with_inputs_checked(
+    model_bytes: &[u8],
+    inputs: Vec<OnnxInput>,
+    input_descriptors: &HashMap<String, OperandDescriptor>,
+    output_descriptors: &HashMap<String, OperandDescriptor>,
+) -> Result<Vec<OnnxOutputWithData>, GraphError> {
+    run_onnx_with_inputs_impl(
+        model_bytes,
+        inputs,
+        Some(input_descriptors),
+        Some(output_descriptors),
+    )
+}
+
+fn run_onnx_with_inputs_impl(
+    model_bytes: &[u8],
+    inputs: Vec<OnnxInput>,
+    input_descriptors: Option<&HashMap<String, OperandDescriptor>>,
+    output_descriptors: Option<&HashMap<String, OperandDescriptor>>,
+) -> Result<Vec<OnnxOutputWithData>, GraphError> {
     // Initialize ort global environment (only once per process)
     ensure_ort_initialized()?;
 
@@ -183,21 +229,53 @@ pub fn run_onnx_with_inputs(
         .map(|o| o.name().to_string())
         .collect();
 
+    let mut runtime_shape_state = RuntimeShapeState::new();
+    let mut actual_input_shapes = HashMap::new();
+    for input in &inputs {
+        validate_shape_data_length(&input.name, &input.shape, input.data.len())?;
+        actual_input_shapes.insert(input.name.clone(), input.shape.clone());
+    }
+    if let Some(descriptors) = input_descriptors {
+        runtime_shape_state.validate_named_shapes(
+            &actual_input_shapes,
+            descriptors,
+            TensorKind::Input,
+        )?;
+    }
+
     // Build input tensors from provided inputs
     let mut input_session_values: Vec<SessionInputValue> = Vec::new();
     for input in inputs {
         let session_value = match input.data {
             TensorData::Float32(data) => {
-                // Convert shape to i64 for ort compatibility
-                let shape_i64: Vec<i64> = input.shape.iter().map(|&d| d as i64).collect();
-                let value = Value::from_array((shape_i64.as_slice(), data)).map_err(|e| {
-                    GraphError::OnnxRuntimeFailed {
+                let value = if input.shape.contains(&0) {
+                    // ort tuple-shape API rejects 0-sized dimensions; ndarray path supports them.
+                    let array = ArrayD::from_shape_vec(IxDyn(&input.shape), data).map_err(|e| {
+                        GraphError::OnnxRuntimeFailed {
+                            reason: format!(
+                                "failed to create float32 ndarray input tensor for {}: {e}",
+                                input.name
+                            ),
+                        }
+                    })?;
+                    Value::from_array(array).map_err(|e| GraphError::OnnxRuntimeFailed {
                         reason: format!(
-                            "failed to create float32 input tensor for {}: {e}",
+                            "failed to create float32 input tensor for {} via ndarray: {e}",
                             input.name
                         ),
-                    }
-                })?;
+                    })?
+                } else {
+                    // Convert shape to i64 for ort compatibility
+                    let shape_i64: Vec<i64> = input.shape.iter().map(|&d| d as i64).collect();
+                    Value::from_array((shape_i64.as_slice(), data)).map_err(|e| {
+                        GraphError::OnnxRuntimeFailed {
+                            reason: format!(
+                                "failed to create float32 input tensor for {}: {e}",
+                                input.name
+                            ),
+                        }
+                    })?
+                };
                 SessionInputValue::from(value)
             }
             TensorData::Float16(data) => {
@@ -364,6 +442,18 @@ pub fn run_onnx_with_inputs(
             int64_data,
             uint64_data,
         });
+    }
+
+    if let Some(descriptors) = output_descriptors {
+        let mut actual_output_shapes = HashMap::new();
+        for output in &results {
+            actual_output_shapes.insert(output.name.clone(), output.shape.clone());
+        }
+        runtime_shape_state.validate_named_shapes(
+            &actual_output_shapes,
+            descriptors,
+            TensorKind::Output,
+        )?;
     }
 
     Ok(results)
