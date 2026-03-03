@@ -2753,6 +2753,172 @@ impl super::GraphConverter for CoremlMlProgramConverter {
                 continue;
             }
 
+            // Special handling for gemm: y = alpha * op(a) * op(b) + beta * c
+            // Lower to matmul + optional mul(alpha) + optional mul(beta, c) + add.
+            if op_type_lower == "gemm" {
+                if op.input_operands.len() < 2 || op.output_operand.is_none() {
+                    return Err(GraphError::ConversionFailed {
+                        format: "coreml_mlprogram".to_string(),
+                        reason: "gemm requires at least 2 input operands and 1 output".to_string(),
+                    });
+                }
+
+                let output_operand_id = op.output_operand.unwrap();
+                let output_operand = graph_info.operand(output_operand_id).ok_or_else(|| {
+                    GraphError::ConversionFailed {
+                        format: "coreml_mlprogram".to_string(),
+                        reason: format!("Output operand {} not found", output_operand_id),
+                    }
+                })?;
+
+                let (output_name, output_type) = Self::create_value(graph_info, output_operand_id)?;
+
+                let alpha = op
+                    .attributes
+                    .get("alpha")
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(1.0) as f32;
+                let beta = op
+                    .attributes
+                    .get("beta")
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(1.0) as f32;
+
+                let has_bias = op.input_operands.len() >= 3;
+                let needs_alpha_mul = (alpha - 1.0).abs() > f32::EPSILON;
+                let needs_beta_mul = has_bias && (beta - 1.0).abs() > f32::EPSILON;
+
+                let (alpha_arg, beta_arg) = match output_operand.descriptor.data_type {
+                    DataType::Float16 => (
+                        Self::create_immediate_float16(alpha),
+                        Self::create_immediate_float16(beta),
+                    ),
+                    DataType::Float32 => (
+                        Self::create_immediate_float(alpha),
+                        Self::create_immediate_float(beta),
+                    ),
+                    _ => {
+                        return Err(GraphError::ConversionFailed {
+                            format: "coreml_mlprogram".to_string(),
+                            reason: format!(
+                                "gemm currently supports float32/float16 output, got {:?}",
+                                output_operand.descriptor.data_type
+                            ),
+                        });
+                    }
+                };
+
+                let mut current_name: String;
+                let matmul_output_name = if needs_alpha_mul || has_bias {
+                    format!("{}_gemm_matmul", output_name)
+                } else {
+                    output_name.clone()
+                };
+
+                let mut matmul_inputs: HashMap<String, Argument> = HashMap::new();
+                matmul_inputs.insert(
+                    "x".to_string(),
+                    Self::create_name_argument(operand_name(graph_info, op.input_operands[0])),
+                );
+                matmul_inputs.insert(
+                    "y".to_string(),
+                    Self::create_name_argument(operand_name(graph_info, op.input_operands[1])),
+                );
+                let a_transpose = op
+                    .attributes
+                    .get("aTranspose")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                let b_transpose = op
+                    .attributes
+                    .get("bTranspose")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                matmul_inputs.insert(
+                    "transpose_x".to_string(),
+                    Self::create_immediate_bool(a_transpose),
+                );
+                matmul_inputs.insert(
+                    "transpose_y".to_string(),
+                    Self::create_immediate_bool(b_transpose),
+                );
+
+                main_block.operations.push(Self::create_mil_operation(
+                    "matmul",
+                    matmul_inputs,
+                    vec![NamedValueType {
+                        name: matmul_output_name.clone(),
+                        r#type: output_type.r#type.clone(),
+                    }],
+                ));
+                current_name = matmul_output_name;
+
+                if needs_alpha_mul {
+                    let alpha_output_name = if has_bias {
+                        format!("{}_gemm_alpha", output_name)
+                    } else {
+                        output_name.clone()
+                    };
+
+                    let mut alpha_mul_inputs: HashMap<String, Argument> = HashMap::new();
+                    alpha_mul_inputs
+                        .insert("x".to_string(), Self::create_name_argument(current_name));
+                    alpha_mul_inputs.insert("y".to_string(), alpha_arg);
+
+                    main_block.operations.push(Self::create_mil_operation(
+                        "mul",
+                        alpha_mul_inputs,
+                        vec![NamedValueType {
+                            name: alpha_output_name.clone(),
+                            r#type: output_type.r#type.clone(),
+                        }],
+                    ));
+
+                    current_name = alpha_output_name;
+                }
+
+                if has_bias {
+                    let c_operand_id = op.input_operands[2];
+                    let (c_name, c_type) = Self::create_value(graph_info, c_operand_id)?;
+                    let scaled_c_name = if needs_beta_mul {
+                        format!("{}_gemm_bias", output_name)
+                    } else {
+                        c_name.clone()
+                    };
+
+                    if needs_beta_mul {
+                        let mut beta_mul_inputs: HashMap<String, Argument> = HashMap::new();
+                        beta_mul_inputs
+                            .insert("x".to_string(), Self::create_name_argument(c_name));
+                        beta_mul_inputs.insert("y".to_string(), beta_arg);
+
+                        main_block.operations.push(Self::create_mil_operation(
+                            "mul",
+                            beta_mul_inputs,
+                            vec![NamedValueType {
+                                name: scaled_c_name.clone(),
+                                r#type: c_type.r#type,
+                            }],
+                        ));
+                    }
+
+                    let mut add_inputs: HashMap<String, Argument> = HashMap::new();
+                    add_inputs.insert("x".to_string(), Self::create_name_argument(current_name));
+                    add_inputs.insert("y".to_string(), Self::create_name_argument(scaled_c_name));
+
+                    main_block.operations.push(Self::create_mil_operation(
+                        "add",
+                        add_inputs,
+                        vec![NamedValueType {
+                            name: output_name,
+                            r#type: output_type.r#type,
+                        }],
+                    ));
+                }
+
+                continue;
+            }
+
             // Special handling for linear: y = alpha * x + beta
             // Lower to mul + add primitives for backend parity.
             if op_type_lower == "linear" {
