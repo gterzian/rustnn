@@ -1123,12 +1123,20 @@ impl CoremlMlProgramConverter {
 
             // Unary operations: x
             "relu" | "sigmoid" | "tanh" | "abs" | "ceil" | "floor" | "roundeven" | "sign"
-            | "identity" | "exp" | "sqrt" | "reciprocal" | "sin" | "cos" | "tan" | "asin"
+            | "identity" | "exp" | "sqrt" | "sin" | "cos" | "tan" | "asin"
             | "acos" | "atan" | "sinh" | "cosh" | "asinh" | "acosh" | "atanh" | "erf"
             | "logicalnot" | "softplus" | "softsign" => {
                 if !input_names.is_empty() {
                     inputs.insert("x".to_string(), Self::create_argument(&input_names[0]));
                 }
+            }
+
+            "reciprocal" => {
+                if !input_names.is_empty() {
+                    inputs.insert("x".to_string(), Self::create_argument(&input_names[0]));
+                }
+                // CoreML log requires epsilon parameter (default to 1e-45 for numerical stability)
+                inputs.insert("epsilon".to_string(), Self::create_immediate_float(1e-45));
             }
 
             // Log operation requires epsilon parameter
