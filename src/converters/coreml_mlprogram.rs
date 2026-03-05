@@ -1394,45 +1394,60 @@ impl CoremlMlProgramConverter {
                     Self::create_immediate_string("custom"),
                 );
 
-                // Add parameters from attributes
-                if let Some(strides) = op.attributes.get("strides").and_then(|v| v.as_array()) {
-                    let strides_u32: Vec<u32> = strides
-                        .iter()
-                        .filter_map(|v| v.as_u64().map(|u| u as u32))
-                        .collect();
-                    if !strides_u32.is_empty() {
-                        inputs.insert(
-                            "strides".to_string(),
-                            Self::create_immediate_int_array(&strides_u32),
-                        );
-                    }
-                }
+                // Add parameters from attributes. CoreML requires these params for conv_transpose,
+                // so emit WebNN defaults when they are omitted.
+                let strides_u32: Vec<u32> = op
+                    .attributes
+                    .get("strides")
+                    .or_else(|| op.attributes.get("stride"))
+                    .and_then(|v| v.as_array())
+                    .map(|strides| {
+                        strides
+                            .iter()
+                            .filter_map(|v| v.as_u64().map(|u| u as u32))
+                            .collect()
+                    })
+                    .filter(|v: &Vec<u32>| !v.is_empty())
+                    .unwrap_or_else(|| vec![1, 1]);
+                inputs.insert(
+                    "strides".to_string(),
+                    Self::create_immediate_int_array(&strides_u32),
+                );
 
-                if let Some(dilations) = op.attributes.get("dilations").and_then(|v| v.as_array()) {
-                    let dilations_u32: Vec<u32> = dilations
-                        .iter()
-                        .filter_map(|v| v.as_u64().map(|u| u as u32))
-                        .collect();
-                    if !dilations_u32.is_empty() {
-                        inputs.insert(
-                            "dilations".to_string(),
-                            Self::create_immediate_int_array(&dilations_u32),
-                        );
-                    }
-                }
+                let dilations_u32: Vec<u32> = op
+                    .attributes
+                    .get("dilations")
+                    .or_else(|| op.attributes.get("dilation"))
+                    .and_then(|v| v.as_array())
+                    .map(|dilations| {
+                        dilations
+                            .iter()
+                            .filter_map(|v| v.as_u64().map(|u| u as u32))
+                            .collect()
+                    })
+                    .filter(|v: &Vec<u32>| !v.is_empty())
+                    .unwrap_or_else(|| vec![1, 1]);
+                inputs.insert(
+                    "dilations".to_string(),
+                    Self::create_immediate_int_array(&dilations_u32),
+                );
 
-                if let Some(pads) = op.attributes.get("pads").and_then(|v| v.as_array()) {
-                    let pads_u32: Vec<u32> = pads
-                        .iter()
-                        .filter_map(|v| v.as_u64().map(|u| u as u32))
-                        .collect();
-                    if !pads_u32.is_empty() {
-                        inputs.insert(
-                            "pad".to_string(),
-                            Self::create_immediate_int_array(&pads_u32),
-                        );
-                    }
-                }
+                let pads_u32: Vec<u32> = op
+                    .attributes
+                    .get("pads")
+                    .or_else(|| op.attributes.get("padding"))
+                    .and_then(|v| v.as_array())
+                    .map(|pads| {
+                        pads.iter()
+                            .filter_map(|v| v.as_u64().map(|u| u as u32))
+                            .collect()
+                    })
+                    .filter(|v: &Vec<u32>| !v.is_empty())
+                    .unwrap_or_else(|| vec![0, 0, 0, 0]);
+                inputs.insert(
+                    "pad".to_string(),
+                    Self::create_immediate_int_array(&pads_u32),
+                );
 
                 // Handle outputSizes (explicit output spatial dimensions [H, W])
                 // Following Chromium: For conv_transpose, CoreML requires output_shape
@@ -1443,12 +1458,15 @@ impl CoremlMlProgramConverter {
                 // For now, skip adding output_shape when using padding (custom pad_type).
                 // TODO: Compute full output shape from outputSizes + input shape + channels
 
-                if let Some(groups) = op.attributes.get("groups").and_then(|v| v.as_u64()) {
-                    inputs.insert(
-                        "groups".to_string(),
-                        Self::create_immediate_int(groups as u32),
-                    );
-                }
+                let groups = op
+                    .attributes
+                    .get("groups")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(1);
+                inputs.insert(
+                    "groups".to_string(),
+                    Self::create_immediate_int(groups as u32),
+                );
             }
 
             // Pooling operations: input + parameters
@@ -2309,6 +2327,7 @@ impl super::GraphConverter for CoremlMlProgramConverter {
                     let expected_layout = if op_type_lower == "conv2d" {
                         "oihw"
                     } else {
+                        // CoreML conv_transpose expects IOHW [in_channels, out_channels/groups, h, w]
                         "iohw"
                     };
 
@@ -2327,6 +2346,7 @@ impl super::GraphConverter for CoremlMlProgramConverter {
                                 ("convtranspose2d", "hwoi") => vec![3, 2, 0, 1], // [H, W, O, I] -> [I, O, H, W]
                                 ("convtranspose2d", "ohwi") => vec![3, 0, 1, 2], // [O, H, W, I] -> [I, O, H, W]
                                 ("convtranspose2d", "hwio") => vec![2, 3, 0, 1], // [H, W, I, O] -> [I, O, H, W]
+                                ("convtranspose2d", "oihw") => vec![1, 0, 2, 3], // [O, I, H, W] -> [I, O, H, W]
 
                                 _ => continue, // Skip unsupported layouts
                             };
@@ -3639,6 +3659,91 @@ mod tests {
         let converter = CoremlMlProgramConverter;
         let result = converter.convert(&graph);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_convtranspose2d_oihw_filter_is_transposed_for_coreml() {
+        let graph = GraphInfo {
+            input_operands: vec![0],
+            output_operands: vec![2],
+            operands: vec![
+                Operand {
+                    name: Some("input".to_string()),
+                    kind: OperandKind::Input,
+                    descriptor: OperandDescriptor {
+                        data_type: DataType::Float32,
+                        shape: s(&[1, 3, 4, 4]),
+                        pending_permutation: vec![],
+                    },
+                },
+                Operand {
+                    name: Some("filter".to_string()),
+                    kind: OperandKind::Input,
+                    descriptor: OperandDescriptor {
+                        data_type: DataType::Float32,
+                        // OIHW: [out_channels/groups, in_channels, h, w]
+                        shape: s(&[2, 3, 3, 3]),
+                        pending_permutation: vec![],
+                    },
+                },
+                Operand {
+                    name: Some("output".to_string()),
+                    kind: OperandKind::Output,
+                    descriptor: OperandDescriptor {
+                        data_type: DataType::Float32,
+                        shape: s(&[1, 2, 6, 6]),
+                        pending_permutation: vec![],
+                    },
+                },
+            ],
+            operations: vec![Operation {
+                op_type: "convTranspose2d".to_string(),
+                input_operands: vec![0, 1],
+                output_operand: Some(2),
+                output_operands: vec![],
+                attributes: serde_json::json!({
+                    "filterLayout": "oihw",
+                    "inputLayout": "nchw",
+                    "strides": [1, 1],
+                    "dilations": [1, 1],
+                    "pads": [0, 0, 0, 0],
+                    "groups": 1
+                }),
+                label: None,
+            }],
+            constant_operand_ids_to_handles: HashMap::new(),
+            id_to_constant_tensor_operand_map: HashMap::new(),
+            quantized: false,
+        };
+
+        let converted = CoremlMlProgramConverter
+            .convert(&graph)
+            .expect("coreml convTranspose2d conversion should succeed");
+        let model = Model::decode(converted.data.as_slice()).expect("decode coreml model");
+        let program = match model.r#type.expect("model type") {
+            crate::protos::coreml::specification::model::Type::MlProgram(program) => program,
+            _ => panic!("expected MLProgram model"),
+        };
+        let main_fn = program.functions.get("main").expect("main function");
+        let main_block = main_fn
+            .block_specializations
+            .get("CoreML7")
+            .expect("CoreML7 block");
+
+        assert!(
+            main_block
+                .operations
+                .iter()
+                .any(|op| op.r#type == "conv_transpose"),
+            "expected conv_transpose op"
+        );
+        assert!(
+            main_block
+                .operations
+                .iter()
+                .any(|op| op.r#type == "transpose"),
+            "expected filter transpose op for oihw layout"
+        );
     }
 
     #[test]
