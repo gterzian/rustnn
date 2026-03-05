@@ -1123,9 +1123,9 @@ impl CoremlMlProgramConverter {
 
             // Unary operations: x
             "relu" | "sigmoid" | "tanh" | "abs" | "ceil" | "floor" | "roundeven" | "sign"
-            | "identity" | "exp" | "sqrt" | "sin" | "cos" | "tan" | "asin"
-            | "acos" | "atan" | "sinh" | "cosh" | "asinh" | "acosh" | "atanh" | "erf"
-            | "logicalnot" | "softplus" | "softsign" => {
+            | "identity" | "exp" | "sqrt" | "sin" | "cos" | "tan" | "asin" | "acos" | "atan"
+            | "sinh" | "cosh" | "asinh" | "acosh" | "atanh" | "erf" | "logicalnot" | "softplus"
+            | "softsign" => {
                 if !input_names.is_empty() {
                     inputs.insert("x".to_string(), Self::create_argument(&input_names[0]));
                 }
@@ -1461,8 +1461,61 @@ impl CoremlMlProgramConverter {
 
             // Pooling operations: input + parameters
             "averagepool2d" | "maxpool2d" => {
+                // CoreML MLProgram pooling path currently assumes NCHW input layout.
+                // Reject NHWC explicitly to avoid invalid model/runtime crashes.
+                let layout = op
+                    .attributes
+                    .get("layout")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("nchw");
+                if !layout.eq_ignore_ascii_case("nchw") {
+                    return Err(GraphError::ConversionFailed {
+                        format: "coreml_mlprogram".to_string(),
+                        reason: format!(
+                            "CoreML pooling currently supports only NCHW layout; got '{}' for {}",
+                            layout, op.op_type
+                        ),
+                    });
+                }
+
+                // WebNN `outputSizes` for pooling is not currently lowered to CoreML
+                // pooling parameters in this converter. Reject explicitly to avoid
+                // output-shape mismatches that can lead to runtime crashes.
+                if let Some(output_sizes) =
+                    op.attributes.get("outputSizes").and_then(|v| v.as_array())
+                    && !output_sizes.is_empty()
+                {
+                    return Err(GraphError::ConversionFailed {
+                        format: "coreml_mlprogram".to_string(),
+                        reason: format!(
+                            "CoreML pooling with outputSizes is not supported yet; got {:?} for {}",
+                            output_sizes, op.op_type
+                        ),
+                    });
+                }
+
                 if !input_names.is_empty() {
                     inputs.insert("x".to_string(), Self::create_argument(&input_names[0]));
+                }
+
+                // outputShapeRounding: "floor" (default) or "ceil"
+                let ceil_mode = op
+                    .attributes
+                    .get("outputShapeRounding")
+                    .and_then(|v| v.as_str())
+                    .map(|v| v.eq_ignore_ascii_case("ceil"))
+                    .unwrap_or(false);
+                inputs.insert(
+                    "ceil_mode".to_string(),
+                    Self::create_immediate_bool(ceil_mode),
+                );
+
+                // Only average pooling accepts this parameter.
+                if op.op_type.eq_ignore_ascii_case("averagePool2d") {
+                    inputs.insert(
+                        "exclude_padding_from_average".to_string(),
+                        Self::create_immediate_bool(false),
+                    );
                 }
 
                 // Add parameters from attributes
@@ -1501,11 +1554,14 @@ impl CoremlMlProgramConverter {
                         .iter()
                         .filter_map(|v| v.as_u64().map(|u| u as u32))
                         .collect();
-                    if !dilations_u32.is_empty() {
-                        inputs.insert(
-                            "dilations".to_string(),
-                            Self::create_immediate_int_array(&dilations_u32),
-                        );
+                    if !dilations_u32.is_empty() && dilations_u32.iter().any(|&d| d != 1) {
+                        return Err(GraphError::ConversionFailed {
+                            format: "coreml_mlprogram".to_string(),
+                            reason: format!(
+                                "CoreML pooling does not support non-default dilations; got {:?} for {}",
+                                dilations_u32, op.op_type
+                            ),
+                        });
                     }
                 }
 
@@ -1519,7 +1575,16 @@ impl CoremlMlProgramConverter {
                             "pad".to_string(),
                             Self::create_immediate_int_array(&pads_u32),
                         );
+                        inputs.insert(
+                            "pad_type".to_string(),
+                            Self::create_immediate_string("custom"),
+                        );
                     }
+                } else {
+                    inputs.insert(
+                        "pad_type".to_string(),
+                        Self::create_immediate_string("same"),
+                    );
                 }
             }
 
@@ -2888,8 +2953,7 @@ impl super::GraphConverter for CoremlMlProgramConverter {
 
                     if needs_beta_mul {
                         let mut beta_mul_inputs: HashMap<String, Argument> = HashMap::new();
-                        beta_mul_inputs
-                            .insert("x".to_string(), Self::create_name_argument(c_name));
+                        beta_mul_inputs.insert("x".to_string(), Self::create_name_argument(c_name));
                         beta_mul_inputs.insert("y".to_string(), beta_arg);
 
                         main_block.operations.push(Self::create_mil_operation(
