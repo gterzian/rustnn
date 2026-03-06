@@ -1,3 +1,8 @@
+#[cfg(any(
+    feature = "onnx-runtime",
+    feature = "trtx-runtime-mock",
+    feature = "trtx-runtime"
+))]
 use std::io::Write;
 use std::path::PathBuf;
 
@@ -8,6 +13,11 @@ use clap::Parser;
     feature = "trtx-runtime"
 ))]
 use rustnn::graph::get_static_or_max_size;
+#[cfg(any(
+    feature = "onnx-runtime",
+    feature = "trtx-runtime-mock",
+    feature = "trtx-runtime"
+))]
 use rustnn::{ContextProperties, GraphError, GraphValidator, graph_to_dot, load_graph_from_path};
 
 #[derive(Parser, Debug)]
@@ -44,6 +54,11 @@ struct Cli {
     run_trtx: bool,
 }
 
+#[cfg(any(
+    feature = "onnx-runtime",
+    feature = "trtx-runtime-mock",
+    feature = "trtx-runtime"
+))]
 fn run() -> Result<(), GraphError> {
     let cli = Cli::parse();
     let graph = load_graph_from_path(&cli.graph)?;
@@ -198,21 +213,21 @@ fn run() -> Result<(), GraphError> {
                     format: converted.format.to_string(),
                 });
             }
-            // Build zeroed inputs
+            // Build zeroed byte inputs (size from descriptor dtype and shape)
             let inputs: Vec<rustnn::TrtxInput> = artifacts
                 .input_names_to_descriptors
                 .iter()
                 .map(|(name, desc)| {
-                    let shape: Vec<usize> = desc
+                    let total: usize = desc
                         .shape
                         .iter()
                         .map(|dim| get_static_or_max_size(dim) as usize)
-                        .collect();
-                    let total: usize = shape.iter().product();
+                        .product::<usize>()
+                        .max(1);
+                    let byte_len = total * desc.data_type.bytes_per_element();
                     rustnn::TrtxInput {
                         name: name.clone(),
-                        shape,
-                        data: vec![0f32; total.max(1)],
+                        data: vec![0u8; byte_len],
                     }
                 })
                 .collect();
@@ -234,8 +249,27 @@ fn run() -> Result<(), GraphError> {
 }
 
 fn main() {
-    if let Err(err) = run() {
-        eprintln!("error: {}", err);
+    #[cfg(any(
+        feature = "onnx-runtime",
+        feature = "trtx-runtime-mock",
+        feature = "trtx-runtime"
+    ))]
+    {
+        if let Err(err) = run() {
+            eprintln!("error: {}", err);
+            std::process::exit(1);
+        }
+    }
+    #[cfg(not(any(
+        feature = "onnx-runtime",
+        feature = "trtx-runtime-mock",
+        feature = "trtx-runtime"
+    )))]
+    {
+        eprintln!(
+            "rustnn CLI requires a runtime feature. Build with --features onnx-runtime or \
+             --features trtx-runtime-mock (or trtx-runtime)."
+        );
         std::process::exit(1);
     }
 }
