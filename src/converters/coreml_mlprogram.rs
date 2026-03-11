@@ -126,6 +126,7 @@ mod mil_ops {
     pub const SLICE: &str = "slice_by_size";
     pub const EXPAND: &str = "tile";
     pub const GATHER: &str = "gather";
+    pub const GATHER_ALONG_AXIS: &str = "gather_along_axis";
     pub const SPLIT: &str = "split";
     pub const WHERE: &str = "select";
     pub const PAD: &str = "pad";
@@ -997,6 +998,7 @@ impl CoremlMlProgramConverter {
             "slice" => mil_ops::SLICE,
             "expand" => mil_ops::EXPAND,
             "gather" => mil_ops::GATHER,
+            "gatherelements" => mil_ops::GATHER_ALONG_AXIS,
             "split" => mil_ops::SPLIT,
             "where" => mil_ops::WHERE,
             "pad" => mil_ops::PAD,
@@ -1809,6 +1811,29 @@ impl CoremlMlProgramConverter {
                 // Add validate_indices parameter (required by CoreML)
                 // Chromium sets this to false to avoid validation issues
                 // TODO: Handle negative and out-of-bounds indices properly
+                inputs.insert(
+                    "validate_indices".to_string(),
+                    Self::create_immediate_bool(false),
+                );
+            }
+
+            "gatherelements" => {
+                // gather_along_axis: x, indices, axis, validate_indices
+                if input_names.len() >= 2 {
+                    inputs.insert("x".to_string(), Self::create_argument(&input_names[0]));
+                    inputs.insert(
+                        "indices".to_string(),
+                        Self::create_argument(&input_names[1]),
+                    );
+                }
+
+                let axis = op
+                    .attributes
+                    .get("axis")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0) as u32;
+                inputs.insert("axis".to_string(), Self::create_immediate_int(axis));
+
                 inputs.insert(
                     "validate_indices".to_string(),
                     Self::create_immediate_bool(false),
