@@ -249,31 +249,142 @@ impl CoremlMlProgramConverter {
 
         let name = operand_name(graph, operand_id);
 
-        // Create ValueType for the operand
         let dtype = Self::mil_data_type(&operand.descriptor.data_type)?;
+        let value_type =
+            Self::create_named_value_type(name.clone(), dtype, &operand.descriptor.shape, true);
 
-        // Preserve dynamic dimensions as UnknownDimension in MIL types.
-        // Scalars are represented as [1] for CoreML compatibility.
-        let dimensions = Self::mil_dimensions_from_graph_shape(&operand.descriptor.shape, true);
+        Ok((name, value_type))
+    }
+
+    fn create_named_value_type(
+        name: String,
+        data_type: i32,
+        shape: &[GraphDimension],
+        scalar_as_one_dim: bool,
+    ) -> NamedValueType {
+        let dimensions = Self::mil_dimensions_from_graph_shape(shape, scalar_as_one_dim);
 
         let value_type = ValueType {
             r#type: Some(
                 crate::protos::coreml::mil_spec::value_type::Type::TensorType(TensorType {
                     rank: dimensions.len() as i64,
-                    data_type: dtype,
+                    data_type,
                     dimensions,
-                    attributes: HashMap::new(), // Empty attributes for now
+                    attributes: HashMap::new(),
                 }),
             ),
         };
 
-        Ok((
-            name.clone(),
-            NamedValueType {
-                name,
-                r#type: Some(value_type),
-            },
+        NamedValueType {
+            name,
+            r#type: Some(value_type),
+        }
+    }
+
+    fn create_value_with_mil_type(
+        graph: &GraphInfo,
+        operand_id: u32,
+        name: String,
+        data_type: i32,
+    ) -> Result<NamedValueType, GraphError> {
+        let operand = graph
+            .operand(operand_id)
+            .ok_or_else(|| GraphError::ConversionFailed {
+                format: "coreml_mlprogram".to_string(),
+                reason: format!("Operand {} not found", operand_id),
+            })?;
+
+        Ok(Self::create_named_value_type(
+            name,
+            data_type,
+            &operand.descriptor.shape,
+            true,
         ))
+    }
+
+    fn output_name_for_operand(
+        graph: &GraphInfo,
+        operand_id: u32,
+        operand_name_overrides: &HashMap<u32, String>,
+    ) -> String {
+        operand_name_overrides
+            .get(&operand_id)
+            .cloned()
+            .unwrap_or_else(|| operand_name(graph, operand_id))
+    }
+
+    fn create_output_value(
+        graph: &GraphInfo,
+        operand_id: u32,
+        operand_name_overrides: &HashMap<u32, String>,
+    ) -> Result<(String, NamedValueType), GraphError> {
+        let name = Self::output_name_for_operand(graph, operand_id, operand_name_overrides);
+        let value_type = Self::create_value_with_mil_type(
+            graph,
+            operand_id,
+            name.clone(),
+            Self::mil_data_type(
+                &graph
+                    .operand(operand_id)
+                    .ok_or_else(|| GraphError::ConversionFailed {
+                        format: "coreml_mlprogram".to_string(),
+                        reason: format!("Operand {} not found", operand_id),
+                    })?
+                    .descriptor
+                    .data_type,
+            )?,
+        )?;
+        Ok((name, value_type))
+    }
+
+    fn interface_mil_data_type(data_type: &DataType) -> i32 {
+        use crate::protos::coreml::mil_spec::DataType as MilDataType;
+
+        match data_type {
+            DataType::Float32 => MilDataType::Float32 as i32,
+            DataType::Float16 => MilDataType::Float16 as i32,
+            DataType::Int32 => MilDataType::Int32 as i32,
+            DataType::Int4
+            | DataType::Uint4
+            | DataType::Int8
+            | DataType::Uint8
+            | DataType::Uint32
+            | DataType::Int64
+            | DataType::Uint64 => MilDataType::Float32 as i32,
+        }
+    }
+
+    fn cast_dtype_string_for_mil_type(data_type: i32) -> Result<&'static str, GraphError> {
+        use crate::protos::coreml::mil_spec::DataType as MilDataType;
+
+        match data_type {
+            value if value == MilDataType::Float32 as i32 => Ok("fp32"),
+            value if value == MilDataType::Float16 as i32 => Ok("fp16"),
+            value if value == MilDataType::Int32 as i32 => Ok("int32"),
+            value if value == MilDataType::Bool as i32 => Ok("bool"),
+            _ => Err(GraphError::ConversionFailed {
+                format: "coreml_mlprogram".to_string(),
+                reason: format!("Unsupported MIL cast dtype {}", data_type),
+            }),
+        }
+    }
+
+    fn cast_dtype_string_for_graph_type(data_type: &DataType) -> Result<&'static str, GraphError> {
+        match data_type {
+            DataType::Float32 => Ok("fp32"),
+            DataType::Float16 => Ok("fp16"),
+            DataType::Int32 => Ok("int32"),
+            DataType::Uint32 => Ok("uint32"),
+            DataType::Int8 => Ok("int8"),
+            DataType::Uint8 => Ok("uint8"),
+            DataType::Int64 => Ok("int64"),
+            DataType::Int4 | DataType::Uint4 | DataType::Uint64 => {
+                Err(GraphError::ConversionFailed {
+                    format: "coreml_mlprogram".to_string(),
+                    reason: format!("Unsupported graph cast dtype {:?}", data_type),
+                })
+            }
+        }
     }
 
     /// Convert WebNN DataType to MIL DataType
@@ -801,16 +912,7 @@ impl CoremlMlProgramConverter {
         let mil_op_type = self.get_mil_op_type(&op.op_type)?;
 
         // Get input operand names, using overrides if available
-        let input_names: Vec<String> = op
-            .input_operands
-            .iter()
-            .map(|&id| {
-                operand_name_overrides
-                    .get(&id)
-                    .cloned()
-                    .unwrap_or_else(|| operand_name(graph, id))
-            })
-            .collect();
+        let input_names = Self::input_names_for_operation(graph, op, operand_name_overrides);
 
         // Get output operand info
         // Check if this is a single-output or multi-output operation
@@ -835,15 +937,55 @@ impl CoremlMlProgramConverter {
             });
         };
 
-        let (_output_name, output_type) = Self::create_value(graph, output_id)?;
+        let (_output_name, output_type) =
+            Self::create_output_value(graph, output_id, operand_name_overrides)?;
 
-        // Create inputs map based on operation type
-        let inputs = self.create_operation_inputs(graph, op, &input_names)?;
+        self.convert_operation_with_input_names_and_outputs(
+            graph,
+            op,
+            &input_names,
+            vec![output_type],
+            mil_op_type,
+        )
+    }
 
-        // Create outputs
-        let outputs = vec![output_type];
+    fn input_names_for_operation(
+        graph: &GraphInfo,
+        op: &Operation,
+        operand_name_overrides: &HashMap<u32, String>,
+    ) -> Vec<String> {
+        op.input_operands
+            .iter()
+            .map(|&id| {
+                operand_name_overrides
+                    .get(&id)
+                    .cloned()
+                    .unwrap_or_else(|| operand_name(graph, id))
+            })
+            .collect()
+    }
 
+    fn convert_operation_with_input_names_and_outputs(
+        &self,
+        graph: &GraphInfo,
+        op: &Operation,
+        input_names: &[String],
+        outputs: Vec<NamedValueType>,
+        mil_op_type: &str,
+    ) -> Result<MilOperation, GraphError> {
+        let inputs = self.create_operation_inputs(graph, op, input_names)?;
         Ok(Self::create_mil_operation(mil_op_type, inputs, outputs))
+    }
+
+    fn create_cast_operation(
+        input_name: String,
+        output_type: NamedValueType,
+        dtype: &str,
+    ) -> MilOperation {
+        let mut inputs = HashMap::new();
+        inputs.insert("x".to_string(), Self::create_name_argument(input_name));
+        inputs.insert("dtype".to_string(), Self::create_immediate_string(dtype));
+        Self::create_mil_operation(mil_ops::CAST, inputs, vec![output_type])
     }
 
     /// Map WebNN operation to MIL operation (convenience wrapper without overrides)
@@ -2144,8 +2286,7 @@ impl CoremlMlProgramConverter {
             DataType::Int32 => {
                 crate::protos::coreml::specification::array_feature_type::ArrayDataType::Int32
             }
-            // Unsupported types - CoreML feature descriptions only support DOUBLE, FLOAT32, FLOAT16, INT32
-            // These must be skipped in tests
+            // Unsupported types - assume they have been converted to FLOAT32.
             DataType::Int4
             | DataType::Uint4
             | DataType::Int8
@@ -2153,13 +2294,7 @@ impl CoremlMlProgramConverter {
             | DataType::Uint32
             | DataType::Int64
             | DataType::Uint64 => {
-                return Err(GraphError::ConversionFailed {
-                    format: "coreml_mlprogram".to_string(),
-                    reason: format!(
-                        "Unsupported feature data type: {:?}. CoreML feature descriptions only support DOUBLE, FLOAT32, FLOAT16, INT32.",
-                        descriptor.data_type
-                    ),
-                });
+                crate::protos::coreml::specification::array_feature_type::ArrayDataType::Float32
             }
         };
 
@@ -2211,14 +2346,73 @@ impl super::GraphConverter for CoremlMlProgramConverter {
         // Create main function
         let mut main_function = Function::default();
 
+        // Keep MLProgram boundary types aligned with CoreML feature-description
+        // restrictions. Unsupported WebNN I/O types (such as uint8) are exposed
+        // as float32 at the function boundary and cast to/from the internal
+        // graph representation inside the main block.
+        let mut operand_name_overrides: HashMap<u32, String> = HashMap::new();
+
+        for &output_id in &graph_info.output_operands {
+            if let Some(operand) = graph_info.operand(output_id) {
+                let graph_mil_type = Self::mil_data_type(&operand.descriptor.data_type)?;
+                let interface_mil_type =
+                    Self::interface_mil_data_type(&operand.descriptor.data_type);
+                if graph_mil_type != interface_mil_type {
+                    let output_name = operand_name(graph_info, output_id);
+                    operand_name_overrides.insert(output_id, format!("{}_graph", output_name));
+                }
+            }
+        }
+
         // Add function inputs from graph inputs
         for &input_id in &graph_info.input_operands {
-            let (_name, value_type) = Self::create_value(graph_info, input_id)?;
+            let operand =
+                graph_info
+                    .operand(input_id)
+                    .ok_or_else(|| GraphError::ConversionFailed {
+                        format: "coreml_mlprogram".to_string(),
+                        reason: format!("Input operand {} not found", input_id),
+                    })?;
+            let input_name = operand_name(graph_info, input_id);
+            let value_type = Self::create_value_with_mil_type(
+                graph_info,
+                input_id,
+                input_name,
+                Self::interface_mil_data_type(&operand.descriptor.data_type),
+            )?;
             main_function.inputs.push(value_type);
         }
 
         // Create main block
         let mut main_block = Block::default();
+
+        for &input_id in &graph_info.input_operands {
+            let operand =
+                graph_info
+                    .operand(input_id)
+                    .ok_or_else(|| GraphError::ConversionFailed {
+                        format: "coreml_mlprogram".to_string(),
+                        reason: format!("Input operand {} not found", input_id),
+                    })?;
+            let graph_mil_type = Self::mil_data_type(&operand.descriptor.data_type)?;
+            let interface_mil_type = Self::interface_mil_data_type(&operand.descriptor.data_type);
+            if graph_mil_type != interface_mil_type {
+                let input_name = operand_name(graph_info, input_id);
+                let graph_input_name = format!("{}_graph", input_name);
+                operand_name_overrides.insert(input_id, graph_input_name.clone());
+                let graph_input_type = Self::create_value_with_mil_type(
+                    graph_info,
+                    input_id,
+                    graph_input_name,
+                    graph_mil_type,
+                )?;
+                main_block.operations.push(Self::create_cast_operation(
+                    input_name,
+                    graph_input_type,
+                    Self::cast_dtype_string_for_graph_type(&operand.descriptor.data_type)?,
+                ));
+            }
+        }
 
         // Add constant operands as const operations
         for (operand_id, constant_data) in &graph_info.constant_operand_ids_to_handles {
@@ -2241,8 +2435,6 @@ impl super::GraphConverter for CoremlMlProgramConverter {
         }
 
         // First pass: Handle filter layout transformations for conv operations
-        // Create a map of operand IDs to their transposed filter names
-        let mut operand_name_overrides: HashMap<u32, String> = HashMap::new();
 
         for op in &graph_info.operations {
             let op_type_lower = op.op_type.to_lowercase();
@@ -2417,10 +2609,145 @@ impl super::GraphConverter for CoremlMlProgramConverter {
 
         // Convert all operations to MIL operations
         for op in &graph_info.operations {
+            let op_type_lower = op.op_type.to_lowercase();
+
+            if matches!(
+                op_type_lower.as_str(),
+                "equal"
+                    | "greater"
+                    | "greaterorequal"
+                    | "lesser"
+                    | "lesserorequal"
+                    | "logicalnot"
+                    | "logicaland"
+                    | "logicalor"
+                    | "logicalxor"
+                    | "notequal"
+            ) {
+                use crate::protos::coreml::mil_spec::DataType as MilDataType;
+
+                let output_id = op
+                    .output_operand
+                    .ok_or_else(|| GraphError::ConversionFailed {
+                        format: "CoreML MLProgram".to_string(),
+                        reason: format!("operation '{}' has no output operand", op.op_type),
+                    })?;
+                let output_operand =
+                    graph_info
+                        .operand(output_id)
+                        .ok_or_else(|| GraphError::ConversionFailed {
+                            format: "coreml_mlprogram".to_string(),
+                            reason: format!("Output operand {} not found", output_id),
+                        })?;
+                if output_operand.descriptor.data_type != DataType::Uint8 {
+                    return Err(GraphError::ConversionFailed {
+                        format: "coreml_mlprogram".to_string(),
+                        reason: format!(
+                            "CoreML logical op '{}' expects uint8 graph output, got {:?}",
+                            op.op_type, output_operand.descriptor.data_type
+                        ),
+                    });
+                }
+
+                let (output_name, output_type) =
+                    Self::create_output_value(graph_info, output_id, &operand_name_overrides)?;
+                let bool_output_name = format!("{}_bool", output_name);
+                let bool_output_type = Self::create_value_with_mil_type(
+                    graph_info,
+                    output_id,
+                    bool_output_name.clone(),
+                    MilDataType::Bool as i32,
+                )?;
+
+                let mut input_names =
+                    Self::input_names_for_operation(graph_info, op, &operand_name_overrides);
+
+                if matches!(
+                    op_type_lower.as_str(),
+                    "logicalnot" | "logicaland" | "logicalor" | "logicalxor"
+                ) {
+                    for (index, &input_id) in op.input_operands.iter().enumerate() {
+                        let input_operand = graph_info.operand(input_id).ok_or_else(|| {
+                            GraphError::ConversionFailed {
+                                format: "coreml_mlprogram".to_string(),
+                                reason: format!("Input operand {} not found", input_id),
+                            }
+                        })?;
+                        if input_operand.descriptor.data_type == DataType::Uint8 {
+                            let bool_input_name = format!("{}_bool", input_names[index]);
+                            let bool_input_type = Self::create_value_with_mil_type(
+                                graph_info,
+                                input_id,
+                                bool_input_name.clone(),
+                                MilDataType::Bool as i32,
+                            )?;
+                            main_block.operations.push(Self::create_cast_operation(
+                                input_names[index].clone(),
+                                bool_input_type,
+                                "bool",
+                            ));
+                            input_names[index] = bool_input_name;
+                        }
+                    }
+                }
+
+                if op_type_lower == "notequal" {
+                    let equal_output_name = format!("{}_equal", output_name);
+                    let equal_output_type = Self::create_value_with_mil_type(
+                        graph_info,
+                        output_id,
+                        equal_output_name.clone(),
+                        MilDataType::Bool as i32,
+                    )?;
+
+                    let mut equal_inputs = HashMap::new();
+                    equal_inputs.insert(
+                        "x".to_string(),
+                        Self::create_name_argument(input_names[0].clone()),
+                    );
+                    equal_inputs.insert(
+                        "y".to_string(),
+                        Self::create_name_argument(input_names[1].clone()),
+                    );
+                    main_block.operations.push(Self::create_mil_operation(
+                        mil_ops::EQUAL,
+                        equal_inputs,
+                        vec![equal_output_type],
+                    ));
+
+                    let mut not_inputs = HashMap::new();
+                    not_inputs.insert(
+                        "x".to_string(),
+                        Self::create_name_argument(equal_output_name),
+                    );
+                    main_block.operations.push(Self::create_mil_operation(
+                        mil_ops::LOGICAL_NOT,
+                        not_inputs,
+                        vec![bool_output_type],
+                    ));
+                } else {
+                    let mil_op = self.convert_operation_with_input_names_and_outputs(
+                        graph_info,
+                        op,
+                        &input_names,
+                        vec![bool_output_type],
+                        self.get_mil_op_type(&op.op_type)?,
+                    )?;
+                    main_block.operations.push(mil_op);
+                }
+
+                main_block.operations.push(Self::create_cast_operation(
+                    bool_output_name,
+                    output_type,
+                    "uint8",
+                ));
+                continue;
+            }
+
             // Special handling for clamp with equal bounds.
             // CoreML clip rejects alpha == beta, while WebNN clamp(min==max) is valid and
             // should produce a constant tensor. Lower as: output = input * 0 + bound.
-            if op.op_type.to_lowercase() == "clamp" {
+            if op_type_lower == "clamp" {
                 let (min_value, max_value) = op
                     .attributes
                     .as_clamp()
@@ -2448,7 +2775,8 @@ impl super::GraphConverter for CoremlMlProgramConverter {
                         }
                     })?;
                     let output_id = op.output_operand.expect("checked above");
-                    let (output_name, output_type) = Self::create_value(graph_info, output_id)?;
+                    let (output_name, output_type) =
+                        Self::create_output_value(graph_info, output_id, &operand_name_overrides)?;
                     let input_name = operand_name(graph_info, input_id);
                     let zeroed_name = format!("{}_clamp_zeroed", output_name);
 
@@ -2587,7 +2915,6 @@ impl super::GraphConverter for CoremlMlProgramConverter {
             // Special handling for hardswish (decompose into hardsigmoid + mul)
             // Following Chromium: hardswish = x * hardsigmoid(x, alpha=1/6, beta=0.5)
             // Note: op_type is "hardSwish" but we normalize to lowercase
-            let op_type_lower = op.op_type.to_lowercase();
             if op_type_lower == "hardswish" {
                 // Validate inputs/outputs exist
                 // Note: hardswish uses output_operand (singular), not output_operands
@@ -3097,7 +3424,31 @@ impl super::GraphConverter for CoremlMlProgramConverter {
 
         // Add block outputs (output operand names)
         for &output_id in &graph_info.output_operands {
+            let operand =
+                graph_info
+                    .operand(output_id)
+                    .ok_or_else(|| GraphError::ConversionFailed {
+                        format: "coreml_mlprogram".to_string(),
+                        reason: format!("Output operand {} not found", output_id),
+                    })?;
             let output_name = operand_name(graph_info, output_id);
+            let graph_output_name =
+                Self::output_name_for_operand(graph_info, output_id, &operand_name_overrides);
+            let graph_mil_type = Self::mil_data_type(&operand.descriptor.data_type)?;
+            let interface_mil_type = Self::interface_mil_data_type(&operand.descriptor.data_type);
+            if graph_mil_type != interface_mil_type {
+                let output_type = Self::create_value_with_mil_type(
+                    graph_info,
+                    output_id,
+                    output_name.clone(),
+                    interface_mil_type,
+                )?;
+                main_block.operations.push(Self::create_cast_operation(
+                    graph_output_name,
+                    output_type,
+                    Self::cast_dtype_string_for_mil_type(interface_mil_type)?,
+                ));
+            }
             main_block.outputs.push(output_name);
         }
 
