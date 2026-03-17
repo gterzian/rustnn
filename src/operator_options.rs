@@ -723,22 +723,7 @@ pub struct MLReverseOptions {
 pub struct MLSoftmaxOptions {
     #[serde(default)]
     pub label: String,
-    /// Axis over which to compute softmax. Default -1 (last axis).
-    #[serde(default = "default_softmax_axis")]
-    pub axis: i32,
-}
-
-fn default_softmax_axis() -> i32 {
-    -1
-}
-
-impl Default for MLSoftmaxOptions {
-    fn default() -> Self {
-        Self {
-            label: String::new(),
-            axis: default_softmax_axis(),
-        }
-    }
+    pub axis: u32,
 }
 
 /// MLScatterOptions. scatterElements.
@@ -753,7 +738,8 @@ pub struct MLScatterOptions {
 
 /// MLSliceOptions. slice.
 /// In WebNN, starts/sizes are MLOperands; we also support them as arrays for interchange.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+/// `sizes` uses MLDimension (static or dynamic) per WebNN IDL.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct MLSliceOptions {
     #[serde(default)]
@@ -761,9 +747,16 @@ pub struct MLSliceOptions {
     #[serde(default)]
     pub starts: Vec<u32>,
     #[serde(default)]
-    pub sizes: Vec<u32>,
+    pub sizes: Vec<MLDimension>,
     #[serde(default)]
     pub strides: Vec<u32>,
+}
+
+impl MLSliceOptions {
+    /// Returns each size dimension as u32 (static value or dynamic maxSize).
+    pub fn sizes_static_or_max(&self) -> Vec<u32> {
+        self.sizes.iter().map(MLDimension::static_or_max).collect()
+    }
 }
 
 /// Deserialize splits as either a number (equal-split count; store empty vec, TRTX uses output count)
