@@ -126,6 +126,7 @@ mod mil_ops {
     pub const SLICE: &str = "slice_by_size";
     pub const EXPAND: &str = "tile";
     pub const GATHER: &str = "gather";
+    pub const GATHER_ALONG_AXIS: &str = "gather_along_axis";
     pub const SPLIT: &str = "split";
     pub const WHERE: &str = "select";
     pub const PAD: &str = "pad";
@@ -1139,6 +1140,7 @@ impl CoremlMlProgramConverter {
             "slice" => mil_ops::SLICE,
             "expand" => mil_ops::EXPAND,
             "gather" => mil_ops::GATHER,
+            "gatherelements" => mil_ops::GATHER_ALONG_AXIS,
             "split" => mil_ops::SPLIT,
             "where" => mil_ops::WHERE,
             "pad" => mil_ops::PAD,
@@ -1273,14 +1275,20 @@ impl CoremlMlProgramConverter {
                 inputs.insert("keep_dims".to_string(), Self::create_immediate_bool(true));
             }
 
-            // Softmax operation (requires axis parameter)
+            // Softmax operation (axis is required by WebNN spec)
             "softmax" => {
                 if !input_names.is_empty() {
                     inputs.insert("x".to_string(), Self::create_argument(&input_names[0]));
                 }
-                // Default axis is -1 (last dimension) if not specified
-                let axis = op.attributes.as_softmax().map(|o| o.axis).unwrap_or(-1);
-                inputs.insert("axis".to_string(), Self::create_immediate_int(axis as u32));
+                let axis = op
+                    .attributes
+                    .as_softmax()
+                    .ok_or_else(|| GraphError::ConversionFailed {
+                        format: "coreml_mlprogram".to_string(),
+                        reason: "softmax operation must have options with axis".to_string(),
+                    })?
+                    .axis;
+                inputs.insert("axis".to_string(), Self::create_immediate_int(axis));
             }
 
             // Neg operation: implemented as mul by -1, requires x and y parameters
@@ -1466,9 +1474,7 @@ impl CoremlMlProgramConverter {
                 }
 
                 // Add shape parameter from typed options (required by CoreML)
-                if let Some(opts) = op.attributes.as_reshape()
-                    && !opts.new_shape.is_empty()
-                {
+                if let Some(opts) = op.attributes.as_reshape() {
                     let shape_values = opts.new_shape_static_or_max();
                     inputs.insert(
                         "shape".to_string(),
@@ -1671,6 +1677,11 @@ impl CoremlMlProgramConverter {
                             "pad_type".to_string(),
                             Self::create_immediate_string("custom"),
                         );
+                    } else {
+                        inputs.insert(
+                            "pad_type".to_string(),
+                            Self::create_immediate_string("same"),
+                        );
                     }
                 } else {
                     inputs.insert(
@@ -1806,12 +1817,16 @@ impl CoremlMlProgramConverter {
                             "gamma".to_string(),
                             Self::create_argument(&operand_name(_graph, sid)),
                         );
+                    } else if input_names.len() >= 4 {
+                        inputs.insert("gamma".to_string(), Self::create_argument(&input_names[3]));
                     }
                     if let Some(bid) = bn_opts.and_then(|o| o.bias) {
                         inputs.insert(
                             "beta".to_string(),
                             Self::create_argument(&operand_name(_graph, bid)),
                         );
+                    } else if input_names.len() >= 5 {
+                        inputs.insert("beta".to_string(), Self::create_argument(&input_names[4]));
                     }
                 } else {
                     // Instance normalization: scale/bias at positions 2 and 3
@@ -1867,9 +1882,10 @@ impl CoremlMlProgramConverter {
                         );
                     }
                     if !opts.sizes.is_empty() {
+                        let sizes_u32 = opts.sizes_static_or_max();
                         inputs.insert(
                             "size".to_string(),
-                            Self::create_immediate_int_array(&opts.sizes),
+                            Self::create_immediate_int_array(&sizes_u32),
                         );
                     }
                 }
@@ -1951,6 +1967,29 @@ impl CoremlMlProgramConverter {
                 // Add validate_indices parameter (required by CoreML)
                 // Chromium sets this to false to avoid validation issues
                 // TODO: Handle negative and out-of-bounds indices properly
+                inputs.insert(
+                    "validate_indices".to_string(),
+                    Self::create_immediate_bool(false),
+                );
+            }
+
+            "gatherelements" => {
+                // gather_along_axis: x, indices, axis, validate_indices
+                if input_names.len() >= 2 {
+                    inputs.insert("x".to_string(), Self::create_argument(&input_names[0]));
+                    inputs.insert(
+                        "indices".to_string(),
+                        Self::create_argument(&input_names[1]),
+                    );
+                }
+
+                let axis = op
+                    .attributes
+                    .get("axis")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0) as u32;
+                inputs.insert("axis".to_string(), Self::create_immediate_int(axis));
+
                 inputs.insert(
                     "validate_indices".to_string(),
                     Self::create_immediate_bool(false),
@@ -2177,21 +2216,36 @@ impl CoremlMlProgramConverter {
                 }
 
                 // Default behavior: reverse all axes when options.axes is omitted.
-                let axes_u32: Vec<u32> = if let Some(opts) =
-                    op.attributes.as_reverse().and_then(|o| o.axes.as_ref())
-                    && !opts.is_empty()
-                {
-                    opts.clone()
-                } else if let Some(input_id) = op.input_operands.first() {
-                    if let Some(input_operand) = _graph.operand(*input_id) {
-                        (0..input_operand.descriptor.shape.len())
-                            .map(|axis| axis as u32)
-                            .collect()
-                    } else {
-                        Vec::new()
+                let axes_u32: Vec<u32> = match op.attributes.as_reverse() {
+                    Some(opts) => match opts.axes.as_ref() {
+                        Some(axes) => axes.clone(),
+                        None => {
+                            if let Some(input_id) = op.input_operands.first() {
+                                if let Some(input_operand) = _graph.operand(*input_id) {
+                                    (0..input_operand.descriptor.shape.len())
+                                        .map(|axis| axis as u32)
+                                        .collect()
+                                } else {
+                                    Vec::new()
+                                }
+                            } else {
+                                Vec::new()
+                            }
+                        }
+                    },
+                    None => {
+                        if let Some(input_id) = op.input_operands.first() {
+                            if let Some(input_operand) = _graph.operand(*input_id) {
+                                (0..input_operand.descriptor.shape.len())
+                                    .map(|axis| axis as u32)
+                                    .collect()
+                            } else {
+                                Vec::new()
+                            }
+                        } else {
+                            Vec::new()
+                        }
                     }
-                } else {
-                    Vec::new()
                 };
 
                 // Always provide axes, including empty arrays (explicit no-op).
