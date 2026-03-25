@@ -718,27 +718,13 @@ pub struct MLReverseOptions {
 }
 
 /// MLSoftmaxOptions. softmax.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct MLSoftmaxOptions {
     #[serde(default)]
     pub label: String,
-    /// Axis over which to compute softmax. Default -1 (last axis).
-    #[serde(default = "default_softmax_axis")]
-    pub axis: i32,
-}
-
-fn default_softmax_axis() -> i32 {
-    -1
-}
-
-impl Default for MLSoftmaxOptions {
-    fn default() -> Self {
-        Self {
-            label: String::new(),
-            axis: default_softmax_axis(),
-        }
-    }
+    #[serde(default)]
+    pub axis: u32,
 }
 
 /// MLScatterOptions. scatterElements.
@@ -753,7 +739,8 @@ pub struct MLScatterOptions {
 
 /// MLSliceOptions. slice.
 /// In WebNN, starts/sizes are MLOperands; we also support them as arrays for interchange.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+/// `sizes` uses MLDimension (static or dynamic) per WebNN IDL.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct MLSliceOptions {
     #[serde(default)]
@@ -761,9 +748,16 @@ pub struct MLSliceOptions {
     #[serde(default)]
     pub starts: Vec<u32>,
     #[serde(default)]
-    pub sizes: Vec<u32>,
+    pub sizes: Vec<MLDimension>,
     #[serde(default)]
     pub strides: Vec<u32>,
+}
+
+impl MLSliceOptions {
+    /// Returns each size dimension as u32 (static value or dynamic maxSize).
+    pub fn sizes_static_or_max(&self) -> Vec<u32> {
+        self.sizes.iter().map(MLDimension::static_or_max).collect()
+    }
 }
 
 /// Deserialize splits as either a number (equal-split count; store empty vec, TRTX uses output count)
@@ -817,9 +811,9 @@ pub struct MLTransposeOptions {
 }
 
 // ---------------------------------------------------------------------------
-// Operator Emulation (squeeze, unsqueeze, flatten)
+// Operation Emulation (squeeze, unsqueeze, flatten)
 // These ops are not part of the official WebNN API; they are defined in
-// § 11 Operator Emulation and can be implemented via reshape().
+// § 11 Operation Emulation and can be implemented via reshape().
 // ---------------------------------------------------------------------------
 
 /// MLSqueezeOptions. squeeze (emulation-only; not in WebNN IDL).
@@ -981,7 +975,7 @@ pub enum OperatorOptions {
     /// MLTransposeOptions.
     Transpose(MLTransposeOptions),
 
-    // Operator Emulation (not part of official WebNN API; § 11).
+    // Operation Emulation (not part of official WebNN API; § 11).
     /// MLSqueezeOptions. squeeze.
     Squeeze(MLSqueezeOptions),
     /// MLUnsqueezeOptions. unsqueeze.
@@ -1088,6 +1082,12 @@ impl OperatorOptions {
     // Typed accessors: return the options struct when the variant matches.
     // ---------------------------------------------------------------------------
 
+    pub fn as_operator(&self) -> Option<&MLOperatorOptions> {
+        match self {
+            OperatorOptions::Operator(o) => Some(o),
+            _ => None,
+        }
+    }
     pub fn as_arg_min_max(&self) -> Option<&MLArgMinMaxOptions> {
         match self {
             OperatorOptions::ArgMinMax(o) => Some(o),

@@ -27,7 +27,8 @@
 /// This replaces the legacy NeuralNetwork format.
 use crate::converters::operand_name;
 use crate::error::GraphError;
-use crate::graph::{DataType, Dimension as GraphDimension, GraphInfo, Operation};
+use crate::graph::{DataType, Dimension as GraphDimension, GraphInfo};
+use crate::operators::Operation;
 use crate::protos::coreml::mil_spec::{
     Argument, Block, Dimension, Function, NamedValueType, Operation as MilOperation, Program,
     TensorType, ValueType, argument::binding::Binding, dimension,
@@ -44,6 +45,10 @@ mod mil_ops {
     pub const MUL: &str = "mul";
     pub const DIV: &str = "real_div";
     pub const POW: &str = "pow";
+    /// Element-wise maximum (WebNN max).
+    pub const MAXIMUM: &str = "maximum";
+    /// Element-wise minimum (WebNN min).
+    pub const MINIMUM: &str = "minimum";
     pub const MATMUL: &str = "matmul";
 
     // Activation functions
@@ -81,7 +86,7 @@ mod mil_ops {
     pub const ABS: &str = "abs";
     pub const CEIL: &str = "ceil";
     pub const FLOOR: &str = "floor";
-    pub const ROUND: &str = "round";
+    pub const ROUND_EVEN: &str = "round"; // WebNN roundEven: round to nearest even (MIL "round")
     pub const NEG: &str = "mul"; // Multiply by -1
     pub const IDENTITY: &str = "identity";
     pub const EXP: &str = "exp";
@@ -91,14 +96,6 @@ mod mil_ops {
     pub const SIN: &str = "sin";
     pub const COS: &str = "cos";
     pub const TAN: &str = "tan";
-    pub const ASIN: &str = "asin";
-    pub const ACOS: &str = "acos";
-    pub const ATAN: &str = "atan";
-    pub const SINH: &str = "sinh";
-    pub const COSH: &str = "cosh";
-    pub const ASINH: &str = "asinh";
-    pub const ACOSH: &str = "acosh";
-    pub const ATANH: &str = "atanh";
     pub const ERF: &str = "erf";
     pub const RECIPROCAL: &str = "inverse";
 
@@ -126,6 +123,7 @@ mod mil_ops {
     pub const SLICE: &str = "slice_by_size";
     pub const EXPAND: &str = "tile";
     pub const GATHER: &str = "gather";
+    pub const GATHER_ALONG_AXIS: &str = "gather_along_axis";
     pub const SPLIT: &str = "split";
     pub const WHERE: &str = "select";
     pub const PAD: &str = "pad";
@@ -249,31 +247,142 @@ impl CoremlMlProgramConverter {
 
         let name = operand_name(graph, operand_id);
 
-        // Create ValueType for the operand
         let dtype = Self::mil_data_type(&operand.descriptor.data_type)?;
+        let value_type =
+            Self::create_named_value_type(name.clone(), dtype, &operand.descriptor.shape, true);
 
-        // Preserve dynamic dimensions as UnknownDimension in MIL types.
-        // Scalars are represented as [1] for CoreML compatibility.
-        let dimensions = Self::mil_dimensions_from_graph_shape(&operand.descriptor.shape, true);
+        Ok((name, value_type))
+    }
+
+    fn create_named_value_type(
+        name: String,
+        data_type: i32,
+        shape: &[GraphDimension],
+        scalar_as_one_dim: bool,
+    ) -> NamedValueType {
+        let dimensions = Self::mil_dimensions_from_graph_shape(shape, scalar_as_one_dim);
 
         let value_type = ValueType {
             r#type: Some(
                 crate::protos::coreml::mil_spec::value_type::Type::TensorType(TensorType {
                     rank: dimensions.len() as i64,
-                    data_type: dtype,
+                    data_type,
                     dimensions,
-                    attributes: HashMap::new(), // Empty attributes for now
+                    attributes: HashMap::new(),
                 }),
             ),
         };
 
-        Ok((
-            name.clone(),
-            NamedValueType {
-                name,
-                r#type: Some(value_type),
-            },
+        NamedValueType {
+            name,
+            r#type: Some(value_type),
+        }
+    }
+
+    fn create_value_with_mil_type(
+        graph: &GraphInfo,
+        operand_id: u32,
+        name: String,
+        data_type: i32,
+    ) -> Result<NamedValueType, GraphError> {
+        let operand = graph
+            .operand(operand_id)
+            .ok_or_else(|| GraphError::ConversionFailed {
+                format: "coreml_mlprogram".to_string(),
+                reason: format!("Operand {} not found", operand_id),
+            })?;
+
+        Ok(Self::create_named_value_type(
+            name,
+            data_type,
+            &operand.descriptor.shape,
+            true,
         ))
+    }
+
+    fn output_name_for_operand(
+        graph: &GraphInfo,
+        operand_id: u32,
+        operand_name_overrides: &HashMap<u32, String>,
+    ) -> String {
+        operand_name_overrides
+            .get(&operand_id)
+            .cloned()
+            .unwrap_or_else(|| operand_name(graph, operand_id))
+    }
+
+    fn create_output_value(
+        graph: &GraphInfo,
+        operand_id: u32,
+        operand_name_overrides: &HashMap<u32, String>,
+    ) -> Result<(String, NamedValueType), GraphError> {
+        let name = Self::output_name_for_operand(graph, operand_id, operand_name_overrides);
+        let value_type = Self::create_value_with_mil_type(
+            graph,
+            operand_id,
+            name.clone(),
+            Self::mil_data_type(
+                &graph
+                    .operand(operand_id)
+                    .ok_or_else(|| GraphError::ConversionFailed {
+                        format: "coreml_mlprogram".to_string(),
+                        reason: format!("Operand {} not found", operand_id),
+                    })?
+                    .descriptor
+                    .data_type,
+            )?,
+        )?;
+        Ok((name, value_type))
+    }
+
+    fn interface_mil_data_type(data_type: &DataType) -> i32 {
+        use crate::protos::coreml::mil_spec::DataType as MilDataType;
+
+        match data_type {
+            DataType::Float32 => MilDataType::Float32 as i32,
+            DataType::Float16 => MilDataType::Float16 as i32,
+            DataType::Int32 => MilDataType::Int32 as i32,
+            DataType::Int4
+            | DataType::Uint4
+            | DataType::Int8
+            | DataType::Uint8
+            | DataType::Uint32
+            | DataType::Int64
+            | DataType::Uint64 => MilDataType::Float32 as i32,
+        }
+    }
+
+    fn cast_dtype_string_for_mil_type(data_type: i32) -> Result<&'static str, GraphError> {
+        use crate::protos::coreml::mil_spec::DataType as MilDataType;
+
+        match data_type {
+            value if value == MilDataType::Float32 as i32 => Ok("fp32"),
+            value if value == MilDataType::Float16 as i32 => Ok("fp16"),
+            value if value == MilDataType::Int32 as i32 => Ok("int32"),
+            value if value == MilDataType::Bool as i32 => Ok("bool"),
+            _ => Err(GraphError::ConversionFailed {
+                format: "coreml_mlprogram".to_string(),
+                reason: format!("Unsupported MIL cast dtype {}", data_type),
+            }),
+        }
+    }
+
+    fn cast_dtype_string_for_graph_type(data_type: &DataType) -> Result<&'static str, GraphError> {
+        match data_type {
+            DataType::Float32 => Ok("fp32"),
+            DataType::Float16 => Ok("fp16"),
+            DataType::Int32 => Ok("int32"),
+            DataType::Uint32 => Ok("uint32"),
+            DataType::Int8 => Ok("int8"),
+            DataType::Uint8 => Ok("uint8"),
+            DataType::Int64 => Ok("int64"),
+            DataType::Int4 | DataType::Uint4 | DataType::Uint64 => {
+                Err(GraphError::ConversionFailed {
+                    format: "coreml_mlprogram".to_string(),
+                    reason: format!("Unsupported graph cast dtype {:?}", data_type),
+                })
+            }
+        }
     }
 
     /// Convert WebNN DataType to MIL DataType
@@ -794,15 +903,56 @@ impl CoremlMlProgramConverter {
         operand_name_overrides: &HashMap<u32, String>,
     ) -> Result<MilOperation, GraphError> {
         // Handle multi-output operations separately
-        if op.op_type == "split" {
+        if matches!(&op, Operation::Split { .. }) {
             return self.convert_split_operation(graph, op);
         }
 
-        let mil_op_type = self.get_mil_op_type(&op.op_type)?;
+        let mil_op_type = self.get_mil_op_type(op.op_type())?;
 
         // Get input operand names, using overrides if available
-        let input_names: Vec<String> = op
-            .input_operands
+        let input_names = Self::input_names_for_operation(graph, op, operand_name_overrides);
+
+        // Get output operand info
+        // Check if this is a single-output or multi-output operation
+        let output_id = if let Some(id) = op.output_operand() {
+            // Single-output operation
+            id
+        } else if !op.output_operands().is_empty() {
+            // Multi-output operation not handled yet
+            return Err(GraphError::ConversionFailed {
+                format: "CoreML MLProgram".to_string(),
+                reason: format!(
+                    "operation '{}' has multiple outputs but is not implemented as multi-output. \
+                     Only 'split' is currently supported as multi-output.",
+                    op.op_type()
+                ),
+            });
+        } else {
+            // No outputs at all - this shouldn't happen but handle gracefully
+            return Err(GraphError::ConversionFailed {
+                format: "CoreML MLProgram".to_string(),
+                reason: format!("operation '{}' has no output operands", op.op_type()),
+            });
+        };
+
+        let (_output_name, output_type) =
+            Self::create_output_value(graph, output_id, operand_name_overrides)?;
+
+        self.convert_operation_with_input_names_and_outputs(
+            graph,
+            op,
+            &input_names,
+            vec![output_type],
+            mil_op_type,
+        )
+    }
+
+    fn input_names_for_operation(
+        graph: &GraphInfo,
+        op: &Operation,
+        operand_name_overrides: &HashMap<u32, String>,
+    ) -> Vec<String> {
+        op.input_operands()
             .iter()
             .map(|&id| {
                 operand_name_overrides
@@ -810,40 +960,30 @@ impl CoremlMlProgramConverter {
                     .cloned()
                     .unwrap_or_else(|| operand_name(graph, id))
             })
-            .collect();
+            .collect()
+    }
 
-        // Get output operand info
-        // Check if this is a single-output or multi-output operation
-        let output_id = if let Some(id) = op.output_operand {
-            // Single-output operation
-            id
-        } else if !op.output_operands.is_empty() {
-            // Multi-output operation not handled yet
-            return Err(GraphError::ConversionFailed {
-                format: "CoreML MLProgram".to_string(),
-                reason: format!(
-                    "operation '{}' has multiple outputs but is not implemented as multi-output. \
-                     Only 'split' is currently supported as multi-output.",
-                    op.op_type
-                ),
-            });
-        } else {
-            // No outputs at all - this shouldn't happen but handle gracefully
-            return Err(GraphError::ConversionFailed {
-                format: "CoreML MLProgram".to_string(),
-                reason: format!("operation '{}' has no output operands", op.op_type),
-            });
-        };
-
-        let (_output_name, output_type) = Self::create_value(graph, output_id)?;
-
-        // Create inputs map based on operation type
-        let inputs = self.create_operation_inputs(graph, op, &input_names)?;
-
-        // Create outputs
-        let outputs = vec![output_type];
-
+    fn convert_operation_with_input_names_and_outputs(
+        &self,
+        graph: &GraphInfo,
+        op: &Operation,
+        input_names: &[String],
+        outputs: Vec<NamedValueType>,
+        mil_op_type: &str,
+    ) -> Result<MilOperation, GraphError> {
+        let inputs = self.create_operation_inputs(graph, op, input_names)?;
         Ok(Self::create_mil_operation(mil_op_type, inputs, outputs))
+    }
+
+    fn create_cast_operation(
+        input_name: String,
+        output_type: NamedValueType,
+        dtype: &str,
+    ) -> MilOperation {
+        let mut inputs = HashMap::new();
+        inputs.insert("x".to_string(), Self::create_name_argument(input_name));
+        inputs.insert("dtype".to_string(), Self::create_immediate_string(dtype));
+        Self::create_mil_operation(mil_ops::CAST, inputs, vec![output_type])
     }
 
     /// Map WebNN operation to MIL operation (convenience wrapper without overrides)
@@ -862,12 +1002,20 @@ impl CoremlMlProgramConverter {
         graph: &GraphInfo,
         op: &Operation,
     ) -> Result<MilOperation, GraphError> {
+        let Operation::Split { input, options, .. } = &op else {
+            return Err(GraphError::ConversionFailed {
+                format: "CoreML MLProgram".to_string(),
+                reason: "expected Split operator".to_string(),
+            });
+        };
+        let input_id = *input;
+
         // Get input operand name
-        let input_name = operand_name(graph, op.input_operands[0]);
+        let input_name = operand_name(graph, input_id);
 
         // Get output types
         let outputs: Vec<NamedValueType> = op
-            .output_operands
+            .output_operands()
             .iter()
             .map(|&id| {
                 let (_name, value_type) = Self::create_value(graph, id)?;
@@ -882,12 +1030,12 @@ impl CoremlMlProgramConverter {
         inputs.insert("x".to_string(), Self::create_name_argument(input_name));
 
         // Add num_splits or split_sizes from typed options
-        if let Some(opts) = op.attributes.as_split() {
+        if let Some(opts) = options {
             if opts.splits.is_empty() {
                 // Equal splits - use num_splits (from output count)
                 inputs.insert(
                     "num_splits".to_string(),
-                    Self::create_int_argument(op.output_operands.len() as i32),
+                    Self::create_int_argument(op.output_operands().len() as i32),
                 );
             } else {
                 let split_sizes: Vec<i32> = opts.splits.iter().map(|&u| u as i32).collect();
@@ -914,6 +1062,8 @@ impl CoremlMlProgramConverter {
             "mul" => mil_ops::MUL,
             "div" => mil_ops::DIV,
             "pow" => mil_ops::POW,
+            "max" => mil_ops::MAXIMUM,
+            "min" => mil_ops::MINIMUM,
             "matmul" => mil_ops::MATMUL,
             "gemm" => mil_ops::MATMUL, // Gemm maps to matmul with transpose handling
 
@@ -952,7 +1102,7 @@ impl CoremlMlProgramConverter {
             "abs" => mil_ops::ABS,
             "ceil" => mil_ops::CEIL,
             "floor" => mil_ops::FLOOR,
-            "roundeven" => mil_ops::ROUND,
+            "roundeven" => mil_ops::ROUND_EVEN,
             "neg" => mil_ops::NEG,
             "identity" => mil_ops::IDENTITY,
             "exp" => mil_ops::EXP,
@@ -962,14 +1112,6 @@ impl CoremlMlProgramConverter {
             "sin" => mil_ops::SIN,
             "cos" => mil_ops::COS,
             "tan" => mil_ops::TAN,
-            "asin" => mil_ops::ASIN,
-            "acos" => mil_ops::ACOS,
-            "atan" => mil_ops::ATAN,
-            "sinh" => mil_ops::SINH,
-            "cosh" => mil_ops::COSH,
-            "asinh" => mil_ops::ASINH,
-            "acosh" => mil_ops::ACOSH,
-            "atanh" => mil_ops::ATANH,
             "erf" => mil_ops::ERF,
             "reciprocal" => mil_ops::RECIPROCAL,
 
@@ -997,6 +1139,7 @@ impl CoremlMlProgramConverter {
             "slice" => mil_ops::SLICE,
             "expand" => mil_ops::EXPAND,
             "gather" => mil_ops::GATHER,
+            "gatherelements" => mil_ops::GATHER_ALONG_AXIS,
             "split" => mil_ops::SPLIT,
             "where" => mil_ops::WHERE,
             "pad" => mil_ops::PAD,
@@ -1056,10 +1199,23 @@ impl CoremlMlProgramConverter {
     ) -> Result<HashMap<String, Argument>, GraphError> {
         let mut inputs = HashMap::new();
 
-        match op.op_type.to_lowercase().as_str() {
+        match &op {
             // Binary operations: x, y
-            "add" | "sub" | "mul" | "div" | "pow" | "equal" | "greater" | "greaterorequal"
-            | "lesser" | "lesserorequal" | "logicaland" | "logicalor" | "logicalxor" => {
+            Operation::Add { .. }
+            | Operation::Sub { .. }
+            | Operation::Mul { .. }
+            | Operation::Div { .. }
+            | Operation::Pow { .. }
+            | Operation::Max { .. }
+            | Operation::Min { .. }
+            | Operation::Equal { .. }
+            | Operation::Greater { .. }
+            | Operation::GreaterOrEqual { .. }
+            | Operation::Lesser { .. }
+            | Operation::LesserOrEqual { .. }
+            | Operation::LogicalAnd { .. }
+            | Operation::LogicalOr { .. }
+            | Operation::LogicalXor { .. } => {
                 if input_names.len() >= 2 {
                     inputs.insert("x".to_string(), Self::create_argument(&input_names[0]));
                     inputs.insert("y".to_string(), Self::create_argument(&input_names[1]));
@@ -1068,7 +1224,7 @@ impl CoremlMlProgramConverter {
 
             // MatMul operation: x, y, transpose_x, transpose_y
             // CoreML requires transpose parameters, WebNN doesn't have them so default to false
-            "matmul" => {
+            Operation::Matmul { .. } => {
                 if input_names.len() >= 2 {
                     inputs.insert("x".to_string(), Self::create_argument(&input_names[0]));
                     inputs.insert("y".to_string(), Self::create_argument(&input_names[1]));
@@ -1092,14 +1248,14 @@ impl CoremlMlProgramConverter {
             // CoreML matmul handles: Y = A * B (with transpose options)
             // For now, we support transpose options and basic matmul
             // TODO: Support alpha, beta, and bias (C) by decomposing into mul and add operations
-            "gemm" => {
+            Operation::Gemm { options, .. } => {
                 if input_names.len() >= 2 {
                     inputs.insert("x".to_string(), Self::create_argument(&input_names[0]));
                     inputs.insert("y".to_string(), Self::create_argument(&input_names[1]));
                 }
 
-                // Add transpose parameters from typed options
-                if let Some(opts) = op.attributes.as_gemm() {
+                // Add transpose parameters from operator options
+                if let Some(opts) = options {
                     inputs.insert(
                         "transpose_x".to_string(),
                         Self::create_immediate_bool(opts.a_transpose),
@@ -1118,7 +1274,7 @@ impl CoremlMlProgramConverter {
             }
 
             // Global pooling operations (reduce over spatial dimensions)
-            "globalaveragepool" | "globalmaxpool" => {
+            Operation::GlobalAveragePool { .. } | Operation::GlobalMaxPool { .. } => {
                 if !input_names.is_empty() {
                     inputs.insert("x".to_string(), Self::create_argument(&input_names[0]));
                 }
@@ -1131,19 +1287,24 @@ impl CoremlMlProgramConverter {
                 inputs.insert("keep_dims".to_string(), Self::create_immediate_bool(true));
             }
 
-            // Softmax operation (requires axis parameter)
-            "softmax" => {
+            // Softmax operation (axis is required by WebNN spec)
+            Operation::Softmax { options, .. } => {
                 if !input_names.is_empty() {
                     inputs.insert("x".to_string(), Self::create_argument(&input_names[0]));
                 }
-                // Default axis is -1 (last dimension) if not specified
-                let axis = op.attributes.as_softmax().map(|o| o.axis).unwrap_or(-1);
-                inputs.insert("axis".to_string(), Self::create_immediate_int(axis as u32));
+                let axis = options
+                    .as_ref()
+                    .ok_or_else(|| GraphError::ConversionFailed {
+                        format: "coreml_mlprogram".to_string(),
+                        reason: "softmax operation must have options with axis".to_string(),
+                    })?
+                    .axis;
+                inputs.insert("axis".to_string(), Self::create_immediate_int(axis));
             }
 
             // Neg operation: implemented as mul by -1, requires x and y parameters
             // CoreML neg is actually a mul operation, so we need both operands
-            "neg" => {
+            Operation::Neg { .. } => {
                 if !input_names.is_empty() {
                     inputs.insert("x".to_string(), Self::create_argument(&input_names[0]));
                 }
@@ -1152,16 +1313,30 @@ impl CoremlMlProgramConverter {
             }
 
             // Unary operations: x
-            "relu" | "sigmoid" | "tanh" | "abs" | "ceil" | "floor" | "roundeven" | "sign"
-            | "identity" | "exp" | "sqrt" | "sin" | "cos" | "tan" | "asin" | "acos" | "atan"
-            | "sinh" | "cosh" | "asinh" | "acosh" | "atanh" | "erf" | "logicalnot" | "softplus"
-            | "softsign" => {
+            Operation::Relu { .. }
+            | Operation::Sigmoid { .. }
+            | Operation::Tanh { .. }
+            | Operation::Abs { .. }
+            | Operation::Ceil { .. }
+            | Operation::Floor { .. }
+            | Operation::RoundEven { .. }
+            | Operation::Sign { .. }
+            | Operation::Identity { .. }
+            | Operation::Exp { .. }
+            | Operation::Sqrt { .. }
+            | Operation::Sin { .. }
+            | Operation::Cos { .. }
+            | Operation::Tan { .. }
+            | Operation::Erf { .. }
+            | Operation::LogicalNot { .. }
+            | Operation::Softplus { .. }
+            | Operation::Softsign { .. } => {
                 if !input_names.is_empty() {
                     inputs.insert("x".to_string(), Self::create_argument(&input_names[0]));
                 }
             }
 
-            "reciprocal" => {
+            Operation::Reciprocal { .. } => {
                 if !input_names.is_empty() {
                     inputs.insert("x".to_string(), Self::create_argument(&input_names[0]));
                 }
@@ -1173,7 +1348,7 @@ impl CoremlMlProgramConverter {
             }
 
             // Log operation requires epsilon parameter
-            "log" => {
+            Operation::Log { .. } => {
                 if !input_names.is_empty() {
                     inputs.insert("x".to_string(), Self::create_argument(&input_names[0]));
                 }
@@ -1185,7 +1360,7 @@ impl CoremlMlProgramConverter {
             }
 
             // Quantization operations: input, scale, zero_point
-            "dequantizelinear" | "quantizelinear" => {
+            Operation::DequantizeLinear { .. } | Operation::QuantizeLinear { .. } => {
                 if input_names.len() >= 3 {
                     inputs.insert("input".to_string(), Self::create_argument(&input_names[0]));
                     inputs.insert("scale".to_string(), Self::create_argument(&input_names[1]));
@@ -1197,7 +1372,7 @@ impl CoremlMlProgramConverter {
             }
 
             // Specialized activation: prelu - x, slope (two inputs)
-            "prelu" => {
+            Operation::Prelu { .. } => {
                 if input_names.len() >= 2 {
                     inputs.insert("x".to_string(), Self::create_argument(&input_names[0]));
                     inputs.insert("alpha".to_string(), Self::create_argument(&input_names[1]));
@@ -1205,22 +1380,24 @@ impl CoremlMlProgramConverter {
             }
 
             // Specialized activations with alpha parameter: elu, leakyRelu
-            "elu" | "leakyrelu" => {
+            Operation::Elu { options, .. } => {
                 if !input_names.is_empty() {
                     inputs.insert("x".to_string(), Self::create_argument(&input_names[0]));
                 }
-                let alpha = op
-                    .attributes
-                    .as_elu()
-                    .map(|o| o.alpha as f32)
-                    .or_else(|| op.attributes.as_leaky_relu().map(|o| o.alpha as f32))
-                    .unwrap_or(0.01);
+                let alpha = options.as_ref().map(|o| o.alpha as f32).unwrap_or(1.0);
+                inputs.insert("alpha".to_string(), Self::create_immediate_float(alpha));
+            }
+            Operation::LeakyRelu { options, .. } => {
+                if !input_names.is_empty() {
+                    inputs.insert("x".to_string(), Self::create_argument(&input_names[0]));
+                }
+                let alpha = options.as_ref().map(|o| o.alpha as f32).unwrap_or(0.01);
                 inputs.insert("alpha".to_string(), Self::create_immediate_float(alpha));
             }
 
             // HardSwish: decomposed in main loop (hardsigmoid + mul)
             // This case should never be reached due to continue in main loop
-            "hardswish" => {
+            Operation::HardSwish { .. } => {
                 return Err(GraphError::ConversionFailed {
                     format: "coreml_mlprogram".to_string(),
                     reason: "hardswish should be decomposed in main loop, not here".to_string(),
@@ -1228,11 +1405,11 @@ impl CoremlMlProgramConverter {
             }
 
             // HardSigmoid: x, alpha, beta parameters
-            "hardsigmoid" => {
+            Operation::HardSigmoid { options, .. } => {
                 if !input_names.is_empty() {
                     inputs.insert("x".to_string(), Self::create_argument(&input_names[0]));
                 }
-                if let Some(opts) = op.attributes.as_hard_sigmoid() {
+                if let Some(opts) = options {
                     inputs.insert(
                         "alpha".to_string(),
                         Self::create_immediate_float(opts.alpha as f32),
@@ -1245,15 +1422,14 @@ impl CoremlMlProgramConverter {
             }
 
             // Clamp operation: x, alpha (min), beta (max)
-            "clamp" => {
+            Operation::Clamp { options, .. } => {
                 if !input_names.is_empty() {
                     inputs.insert("x".to_string(), Self::create_argument(&input_names[0]));
                 }
                 // CoreML clip operation requires BOTH alpha and beta parameters
                 // WebNN clamp defaults: minValue=-Infinity, maxValue=+Infinity
-                let (min_value, max_value) = op
-                    .attributes
-                    .as_clamp()
+                let (min_value, max_value) = options
+                    .as_ref()
                     .map(|o| {
                         let min =
                             Self::parse_clamp_bound(o.min_value.as_ref(), f64::NEG_INFINITY) as f32;
@@ -1265,8 +1441,8 @@ impl CoremlMlProgramConverter {
 
                 // Alpha and beta must match input type (CoreML requirement)
                 // Check first input operand type and use appropriate immediate value method
-                let use_float16 = if !op.input_operands.is_empty() {
-                    if let Some(input_operand) = _graph.operand(op.input_operands[0]) {
+                let use_float16 = if !op.input_operands().is_empty() {
+                    if let Some(input_operand) = _graph.operand(op.input_operands()[0]) {
                         input_operand.descriptor.data_type == DataType::Float16
                     } else {
                         false
@@ -1291,22 +1467,22 @@ impl CoremlMlProgramConverter {
             }
 
             // Transpose operation: x, permutation
-            "transpose" => {
+            Operation::Transpose { options, .. } => {
                 if !input_names.is_empty() {
                     inputs.insert("x".to_string(), Self::create_argument(&input_names[0]));
                 }
 
                 // Add permutation parameter (required by CoreML)
                 // If not specified in WebNN, default is to reverse all dimensions
-                if let Some(opts) = op.attributes.as_transpose()
+                if let Some(opts) = options
                     && !opts.permutation.is_empty()
                 {
                     inputs.insert(
                         "perm".to_string(),
                         Self::create_immediate_int_array(&opts.permutation),
                     );
-                } else if !op.input_operands.is_empty()
-                    && let Some(input_operand) = _graph.operand(op.input_operands[0])
+                } else if !op.input_operands().is_empty()
+                    && let Some(input_operand) = _graph.operand(op.input_operands()[0])
                 {
                     let rank = input_operand.descriptor.shape.len();
                     let default_perm: Vec<u32> = (0..rank).rev().map(|i| i as u32).collect();
@@ -1318,15 +1494,13 @@ impl CoremlMlProgramConverter {
             }
 
             // Reshape: x, shape
-            "reshape" => {
+            Operation::Reshape { options, .. } => {
                 if !input_names.is_empty() {
                     inputs.insert("x".to_string(), Self::create_argument(&input_names[0]));
                 }
 
-                // Add shape parameter from typed options (required by CoreML)
-                if let Some(opts) = op.attributes.as_reshape()
-                    && !opts.new_shape.is_empty()
-                {
+                // Add shape parameter from operator options (required by CoreML)
+                if let Some(opts) = options {
                     let shape_values = opts.new_shape_static_or_max();
                     inputs.insert(
                         "shape".to_string(),
@@ -1336,7 +1510,7 @@ impl CoremlMlProgramConverter {
             }
 
             // Convolution operations: input, filter + parameters
-            "conv2d" => {
+            Operation::Conv2d { options, .. } => {
                 if input_names.len() >= 2 {
                     inputs.insert("x".to_string(), Self::create_argument(&input_names[0]));
                     inputs.insert("weight".to_string(), Self::create_argument(&input_names[1]));
@@ -1347,8 +1521,8 @@ impl CoremlMlProgramConverter {
                     inputs.insert("bias".to_string(), Self::create_argument(&input_names[2]));
                 }
 
-                // Add parameters from typed options
-                if let Some(opts) = op.attributes.as_conv2d() {
+                // Add parameters from operator options
+                if let Some(opts) = options {
                     if !opts.strides.is_empty() {
                         inputs.insert(
                             "strides".to_string(),
@@ -1382,7 +1556,7 @@ impl CoremlMlProgramConverter {
             }
 
             // Transposed convolution: input, filter + parameters
-            "convtranspose2d" => {
+            Operation::ConvTranspose2d { options, .. } => {
                 if input_names.len() >= 2 {
                     inputs.insert("x".to_string(), Self::create_argument(&input_names[0]));
                     inputs.insert("weight".to_string(), Self::create_argument(&input_names[1]));
@@ -1399,8 +1573,8 @@ impl CoremlMlProgramConverter {
                     Self::create_immediate_string("custom"),
                 );
 
-                // Add parameters from attributes
-                if let Some(opts) = op.attributes.as_conv_transpose2d() {
+                // Add parameters from operator options
+                if let Some(opts) = options {
                     if !opts.strides.is_empty() {
                         inputs.insert(
                             "strides".to_string(),
@@ -1435,12 +1609,16 @@ impl CoremlMlProgramConverter {
             }
 
             // Pooling operations: input + parameters
-            "averagepool2d" | "maxpool2d" => {
-                let pool_opts = op.attributes.as_pool2d();
-
+            Operation::AveragePool2d {
+                options: pool_opts, ..
+            }
+            | Operation::MaxPool2d {
+                options: pool_opts, ..
+            } => {
                 // CoreML MLProgram pooling path currently assumes NCHW input layout.
                 // Reject NHWC explicitly to avoid invalid model/runtime crashes.
                 let layout = pool_opts
+                    .as_ref()
                     .map(|o| {
                         if o.layout.is_empty() {
                             "nchw"
@@ -1454,7 +1632,8 @@ impl CoremlMlProgramConverter {
                         format: "coreml_mlprogram".to_string(),
                         reason: format!(
                             "CoreML pooling currently supports only NCHW layout; got '{}' for {}",
-                            layout, op.op_type
+                            layout,
+                            op.op_type(),
                         ),
                     });
                 }
@@ -1462,14 +1641,15 @@ impl CoremlMlProgramConverter {
                 // WebNN `outputSizes` for pooling is not currently lowered to CoreML
                 // pooling parameters in this converter. Reject explicitly to avoid
                 // output-shape mismatches that can lead to runtime crashes.
-                if let Some(output_sizes) = pool_opts.and_then(|o| o.output_sizes.as_ref())
+                if let Some(output_sizes) = pool_opts.as_ref().and_then(|o| o.output_sizes.as_ref())
                     && !output_sizes.is_empty()
                 {
                     return Err(GraphError::ConversionFailed {
                         format: "coreml_mlprogram".to_string(),
                         reason: format!(
                             "CoreML pooling with outputSizes is not supported yet; got {:?} for {}",
-                            output_sizes, op.op_type
+                            output_sizes,
+                            op.op_type()
                         ),
                     });
                 }
@@ -1480,6 +1660,7 @@ impl CoremlMlProgramConverter {
 
                 // outputShapeRounding: "floor" (default) or "ceil"
                 let ceil_mode = pool_opts
+                    .as_ref()
                     .map(|o| o.output_shape_rounding.eq_ignore_ascii_case("ceil"))
                     .unwrap_or(false);
                 inputs.insert(
@@ -1488,15 +1669,15 @@ impl CoremlMlProgramConverter {
                 );
 
                 // Only average pooling accepts this parameter.
-                if op.op_type.eq_ignore_ascii_case("averagePool2d") {
+                if matches!(&op, Operation::AveragePool2d { .. }) {
                     inputs.insert(
                         "exclude_padding_from_average".to_string(),
                         Self::create_immediate_bool(false),
                     );
                 }
 
-                // Add parameters from typed options
-                if let Some(opts) = pool_opts {
+                // Add parameters from operator options
+                if let Some(opts) = pool_opts.as_ref() {
                     if let Some(window_dimensions) = opts.window_dimensions.as_ref()
                         && !window_dimensions.is_empty()
                     {
@@ -1516,7 +1697,8 @@ impl CoremlMlProgramConverter {
                             format: "coreml_mlprogram".to_string(),
                             reason: format!(
                                 "CoreML pooling does not support non-default dilations; got {:?} for {}",
-                                opts.dilations, op.op_type
+                                opts.dilations,
+                                op.op_type()
                             ),
                         });
                     }
@@ -1529,6 +1711,11 @@ impl CoremlMlProgramConverter {
                             "pad_type".to_string(),
                             Self::create_immediate_string("custom"),
                         );
+                    } else {
+                        inputs.insert(
+                            "pad_type".to_string(),
+                            Self::create_immediate_string("same"),
+                        );
                     }
                 } else {
                     inputs.insert(
@@ -1539,13 +1726,12 @@ impl CoremlMlProgramConverter {
             }
 
             // Layer normalization (different from batch/instance normalization)
-            "layernormalization" => {
+            Operation::LayerNormalization { options, .. } => {
                 // Check if axes is empty - CoreML doesn't support empty axes
                 // Following Chromium (graph_builder_coreml.cc:4000-4019):
                 // When axes is empty, mean equals input, so output = bias + (scale * 0)
-                let axes_vec: Vec<i32> = op
-                    .attributes
-                    .as_layer_normalization()
+                let axes_vec: Vec<i32> = options
+                    .as_ref()
                     .and_then(|o| o.axes.as_ref())
                     .map(|ax| ax.iter().map(|&u| u as i32).collect())
                     .unwrap_or_default();
@@ -1569,8 +1755,8 @@ impl CoremlMlProgramConverter {
                 // Scale (gamma) is optional (2nd input)
                 // CoreML requires scale/bias to be constant tensors (not graph inputs)
                 // Following Chromium: TODO(crbug.com/338529226) - these params must be constant
-                if input_names.len() >= 2 && op.input_operands.len() >= 2 {
-                    let scale_operand_id = op.input_operands[1];
+                if input_names.len() >= 2 && op.input_operands().len() >= 2 {
+                    let scale_operand_id = op.input_operands()[1];
                     if let Some(scale_operand) = _graph.operand(scale_operand_id)
                         && scale_operand.kind != crate::graph::OperandKind::Constant
                     {
@@ -1583,8 +1769,8 @@ impl CoremlMlProgramConverter {
                 }
 
                 // Bias (beta) is optional (3rd input)
-                if input_names.len() >= 3 && op.input_operands.len() >= 3 {
-                    let bias_operand_id = op.input_operands[2];
+                if input_names.len() >= 3 && op.input_operands().len() >= 3 {
+                    let bias_operand_id = op.input_operands()[2];
                     if let Some(bias_operand) = _graph.operand(bias_operand_id)
                         && bias_operand.kind != crate::graph::OperandKind::Constant
                     {
@@ -1602,7 +1788,7 @@ impl CoremlMlProgramConverter {
                     Self::create_int_array_argument(axes_vec),
                 );
 
-                if let Some(opts) = op.attributes.as_layer_normalization() {
+                if let Some(opts) = options {
                     inputs.insert(
                         "epsilon".to_string(),
                         Self::create_immediate_float(opts.epsilon as f32),
@@ -1611,17 +1797,12 @@ impl CoremlMlProgramConverter {
             }
 
             // Batch/instance normalization (have mean, variance inputs)
-            "batchnormalization" | "instancenormalization" => {
-                // Add input operands (input, mean, variance, optional scale, optional bias)
-                // CoreML requires mean and variance to be constant tensors (not graph inputs)
-                // Following Chromium pattern (though they don't validate this yet)
+            Operation::BatchNormalization { options, .. } => {
                 if !input_names.is_empty() {
                     inputs.insert("x".to_string(), Self::create_argument(&input_names[0]));
                 }
-
-                // Mean parameter (2nd input) - must be constant
-                if input_names.len() >= 2 && op.input_operands.len() >= 2 {
-                    let mean_operand_id = op.input_operands[1];
+                if input_names.len() >= 2 && op.input_operands().len() >= 2 {
+                    let mean_operand_id = op.input_operands()[1];
                     if let Some(mean_operand) = _graph.operand(mean_operand_id)
                         && mean_operand.kind != crate::graph::OperandKind::Constant
                     {
@@ -1629,16 +1810,14 @@ impl CoremlMlProgramConverter {
                             format: "coreml_mlprogram".to_string(),
                             reason: format!(
                                 "CoreML {} requires mean parameter to be a constant tensor, not a graph input",
-                                op.op_type
+                                op.op_type()
                             ),
                         });
                     }
                     inputs.insert("mean".to_string(), Self::create_argument(&input_names[1]));
                 }
-
-                // Variance parameter (3rd input) - must be constant
-                if input_names.len() >= 3 && op.input_operands.len() >= 3 {
-                    let variance_operand_id = op.input_operands[2];
+                if input_names.len() >= 3 && op.input_operands().len() >= 3 {
+                    let variance_operand_id = op.input_operands()[2];
                     if let Some(variance_operand) = _graph.operand(variance_operand_id)
                         && variance_operand.kind != crate::graph::OperandKind::Constant
                     {
@@ -1646,7 +1825,7 @@ impl CoremlMlProgramConverter {
                             format: "coreml_mlprogram".to_string(),
                             reason: format!(
                                 "CoreML {} requires variance parameter to be a constant tensor, not a graph input",
-                                op.op_type
+                                op.op_type()
                             ),
                         });
                     }
@@ -1655,47 +1834,81 @@ impl CoremlMlProgramConverter {
                         Self::create_argument(&input_names[2]),
                     );
                 }
-
-                // Scale and bias: WebNN batchNormalization has them only in MLBatchNormalizationOptions (not positional inputs).
-                if op.op_type == "batchNormalization" {
-                    let bn_opts = op.attributes.as_batch_normalization();
-                    if let Some(sid) = bn_opts.and_then(|o| o.scale) {
+                if let Some(opts) = options {
+                    if let Some(sid) = opts.scale {
                         inputs.insert(
                             "gamma".to_string(),
                             Self::create_argument(&operand_name(_graph, sid)),
                         );
+                    } else if input_names.len() >= 4 {
+                        inputs.insert("gamma".to_string(), Self::create_argument(&input_names[3]));
                     }
-                    if let Some(bid) = bn_opts.and_then(|o| o.bias) {
+                    if let Some(bid) = opts.bias {
                         inputs.insert(
                             "beta".to_string(),
                             Self::create_argument(&operand_name(_graph, bid)),
                         );
-                    }
-                } else {
-                    // Instance normalization: scale/bias at positions 2 and 3
-                    if input_names.len() >= 4 {
-                        inputs.insert("gamma".to_string(), Self::create_argument(&input_names[3]));
-                    }
-                    if input_names.len() >= 5 {
+                    } else if input_names.len() >= 5 {
                         inputs.insert("beta".to_string(), Self::create_argument(&input_names[4]));
                     }
+                    inputs.insert(
+                        "epsilon".to_string(),
+                        Self::create_immediate_float(opts.epsilon as f32),
+                    );
                 }
-
-                let epsilon_opt = op
-                    .attributes
-                    .as_batch_normalization()
-                    .map(|o| o.epsilon as f32)
-                    .or_else(|| {
-                        op.attributes
-                            .as_instance_normalization()
-                            .map(|o| o.epsilon as f32)
-                    });
-                if let Some(epsilon) = epsilon_opt {
-                    inputs.insert("epsilon".to_string(), Self::create_immediate_float(epsilon));
+            }
+            Operation::InstanceNormalization { options, .. } => {
+                if !input_names.is_empty() {
+                    inputs.insert("x".to_string(), Self::create_argument(&input_names[0]));
+                }
+                if input_names.len() >= 2 && op.input_operands().len() >= 2 {
+                    let mean_operand_id = op.input_operands()[1];
+                    if let Some(mean_operand) = _graph.operand(mean_operand_id)
+                        && mean_operand.kind != crate::graph::OperandKind::Constant
+                    {
+                        return Err(GraphError::ConversionFailed {
+                            format: "coreml_mlprogram".to_string(),
+                            reason: format!(
+                                "CoreML {} requires mean parameter to be a constant tensor, not a graph input",
+                                op.op_type()
+                            ),
+                        });
+                    }
+                    inputs.insert("mean".to_string(), Self::create_argument(&input_names[1]));
+                }
+                if input_names.len() >= 3 && op.input_operands().len() >= 3 {
+                    let variance_operand_id = op.input_operands()[2];
+                    if let Some(variance_operand) = _graph.operand(variance_operand_id)
+                        && variance_operand.kind != crate::graph::OperandKind::Constant
+                    {
+                        return Err(GraphError::ConversionFailed {
+                            format: "coreml_mlprogram".to_string(),
+                            reason: format!(
+                                "CoreML {} requires variance parameter to be a constant tensor, not a graph input",
+                                op.op_type()
+                            ),
+                        });
+                    }
+                    inputs.insert(
+                        "variance".to_string(),
+                        Self::create_argument(&input_names[2]),
+                    );
+                }
+                if input_names.len() >= 4 {
+                    inputs.insert("gamma".to_string(), Self::create_argument(&input_names[3]));
+                }
+                if input_names.len() >= 5 {
+                    inputs.insert("beta".to_string(), Self::create_argument(&input_names[4]));
+                }
+                if let Some(opts) = options {
+                    inputs.insert(
+                        "epsilon".to_string(),
+                        Self::create_immediate_float(opts.epsilon as f32),
+                    );
                 }
             }
 
-            "concat" => {
+            Operation::Concat { options, .. } => {
                 // concat: values (variadic list of tensors), axis
                 // CoreML expects a single 'values' parameter containing a tuple of all inputs
                 if !input_names.is_empty() {
@@ -1705,19 +1918,19 @@ impl CoremlMlProgramConverter {
                     );
                 }
 
-                if let Some(opts) = op.attributes.as_concat() {
+                if let Some(opts) = options {
                     inputs.insert("axis".to_string(), Self::create_immediate_int(opts.axis));
                 }
                 inputs.insert("interleave".to_string(), Self::create_immediate_bool(false));
             }
 
-            "slice" => {
+            Operation::Slice { options, .. } => {
                 // slice_by_size: x, begin, size
                 if !input_names.is_empty() {
                     inputs.insert("x".to_string(), Self::create_argument(&input_names[0]));
                 }
 
-                if let Some(opts) = op.attributes.as_slice() {
+                if let Some(opts) = options {
                     if !opts.starts.is_empty() {
                         inputs.insert(
                             "begin".to_string(),
@@ -1725,28 +1938,28 @@ impl CoremlMlProgramConverter {
                         );
                     }
                     if !opts.sizes.is_empty() {
+                        let sizes_u32 = opts.sizes_static_or_max();
                         inputs.insert(
                             "size".to_string(),
-                            Self::create_immediate_int_array(&opts.sizes),
+                            Self::create_immediate_int_array(&sizes_u32),
                         );
                     }
                 }
             }
 
-            "expand" => {
+            Operation::Expand { options, .. } => {
                 // CoreML tile operation requires input rank to match reps length
                 // If reshape was added before this operation, use reshaped input name
                 //  Otherwise use original input
 
-                if let Some(new_shape_u32) = op
-                    .attributes
-                    .as_expand()
+                if let Some(new_shape_u32) = options
+                    .as_ref()
                     .map(|o| o.new_shape_static_or_max())
                     .filter(|s| !s.is_empty())
                 {
                     // Get input operand shape
-                    if !op.input_operands.is_empty()
-                        && let Some(input_operand) = _graph.operand(op.input_operands[0])
+                    if !op.input_operands().is_empty()
+                        && let Some(input_operand) = _graph.operand(op.input_operands()[0])
                     {
                         let input_shape = input_operand.descriptor.static_or_max_shape();
                         let input_rank = input_shape.len();
@@ -1791,7 +2004,7 @@ impl CoremlMlProgramConverter {
                 }
             }
 
-            "gather" => {
+            Operation::Gather { options, .. } => {
                 // gather: x (data), indices, axis, validate_indices
                 // CoreML uses 'x' for the data input, not 'params'
                 if input_names.len() >= 2 {
@@ -1803,7 +2016,7 @@ impl CoremlMlProgramConverter {
                 }
 
                 // Add axis parameter (REQUIRED by CoreML, defaults to 0)
-                let axis = op.attributes.as_gather().map(|o| o.axis).unwrap_or(0);
+                let axis = options.as_ref().map(|o| o.axis).unwrap_or(0);
                 inputs.insert("axis".to_string(), Self::create_immediate_int(axis));
 
                 // Add validate_indices parameter (required by CoreML)
@@ -1815,16 +2028,35 @@ impl CoremlMlProgramConverter {
                 );
             }
 
-            "split" => {
+            Operation::GatherElements { options, .. } => {
+                // gather_along_axis: x, indices, axis, validate_indices
+                if input_names.len() >= 2 {
+                    inputs.insert("x".to_string(), Self::create_argument(&input_names[0]));
+                    inputs.insert(
+                        "indices".to_string(),
+                        Self::create_argument(&input_names[1]),
+                    );
+                }
+
+                let axis = options.as_ref().map(|o| o.axis).unwrap_or(0);
+                inputs.insert("axis".to_string(), Self::create_immediate_int(axis));
+
+                inputs.insert(
+                    "validate_indices".to_string(),
+                    Self::create_immediate_bool(false),
+                );
+            }
+
+            Operation::Split { options, .. } => {
                 // split: x, num_splits or split_sizes, axis
                 if !input_names.is_empty() {
                     inputs.insert("x".to_string(), Self::create_argument(&input_names[0]));
                 }
-                if let Some(opts) = op.attributes.as_split() {
+                if let Some(opts) = options {
                     if opts.splits.is_empty() {
                         inputs.insert(
                             "num_splits".to_string(),
-                            Self::create_immediate_int(op.output_operands.len() as u32),
+                            Self::create_immediate_int(op.output_operands().len() as u32),
                         );
                     } else {
                         inputs.insert(
@@ -1836,7 +2068,7 @@ impl CoremlMlProgramConverter {
                 }
             }
 
-            "where" => {
+            Operation::Where { .. } => {
                 // select: cond, a (true_value), b (false_value)
                 if input_names.len() >= 3 {
                     inputs.insert("cond".to_string(), Self::create_argument(&input_names[0]));
@@ -1845,12 +2077,12 @@ impl CoremlMlProgramConverter {
                 }
             }
 
-            "pad" => {
+            Operation::Pad { options, .. } => {
                 // pad: x, pad, mode, constant_val
                 if !input_names.is_empty() {
                     inputs.insert("x".to_string(), Self::create_argument(&input_names[0]));
                 }
-                if let Some(opts) = op.attributes.as_pad() {
+                if let Some(opts) = options {
                     // CoreML expects pad as [begin_0, end_0, begin_1, end_1, ...]
                     let pad: Vec<u32> = opts
                         .beginning_padding
@@ -1873,7 +2105,7 @@ impl CoremlMlProgramConverter {
                 // WebNN modes: "constant", "edge", "reflection", "symmetric"
             }
 
-            "gelu" => {
+            Operation::Gelu { .. } => {
                 // gelu: x (mode is optional, defaults to "EXACT")
                 if !input_names.is_empty() {
                     inputs.insert("x".to_string(), Self::create_argument(&input_names[0]));
@@ -1882,11 +2114,11 @@ impl CoremlMlProgramConverter {
                 // WebNN GELU has no mode parameter (uses exact by default)
             }
 
-            "squeeze" => {
+            Operation::Squeeze { options, .. } => {
                 if !input_names.is_empty() {
                     inputs.insert("x".to_string(), Self::create_argument(&input_names[0]));
                 }
-                if let Some(opts) = op.attributes.as_squeeze()
+                if let Some(opts) = options
                     && !opts.axes.is_empty()
                 {
                     inputs.insert(
@@ -1896,13 +2128,13 @@ impl CoremlMlProgramConverter {
                 }
             }
 
-            "unsqueeze" => {
+            Operation::Unsqueeze { options, .. } => {
                 // expand_dims: x, axes
                 if !input_names.is_empty() {
                     inputs.insert("x".to_string(), Self::create_argument(&input_names[0]));
                 }
 
-                if let Some(opts) = op.attributes.as_unsqueeze()
+                if let Some(opts) = options
                     && !opts.axes.is_empty()
                 {
                     inputs.insert(
@@ -1912,13 +2144,13 @@ impl CoremlMlProgramConverter {
                 }
             }
 
-            "argmax" | "argmin" => {
+            Operation::ArgMax { options, .. } | Operation::ArgMin { options, .. } => {
                 // reduce_argmax/reduce_argmin: x, axis, keep_dims
                 if !input_names.is_empty() {
                     inputs.insert("x".to_string(), Self::create_argument(&input_names[0]));
                 }
 
-                if let Some(opts) = op.attributes.as_arg_min_max() {
+                if let Some(opts) = options {
                     inputs.insert("axis".to_string(), Self::create_immediate_int(opts.axis));
                     inputs.insert(
                         "keep_dims".to_string(),
@@ -1928,14 +2160,14 @@ impl CoremlMlProgramConverter {
                 // Note: outputDataType is handled by the output tensor's data type
             }
 
-            "cast" => {
+            Operation::Cast { options, .. } => {
                 // cast: x, dtype
                 if !input_names.is_empty() {
                     inputs.insert("x".to_string(), Self::create_argument(&input_names[0]));
                 }
 
                 // Add dtype parameter (required)
-                if let Some(opts) = op.attributes.as_cast()
+                if let Some(opts) = options
                     && !opts.to.is_empty()
                 {
                     let to_type = &opts.to;
@@ -1956,7 +2188,7 @@ impl CoremlMlProgramConverter {
                 }
             }
 
-            "scatterelements" => {
+            Operation::ScatterElements { options, .. } => {
                 // scatter: data, indices, updates, axis
                 if input_names.len() >= 3 {
                     inputs.insert("data".to_string(), Self::create_argument(&input_names[0]));
@@ -1970,12 +2202,12 @@ impl CoremlMlProgramConverter {
                     );
                 }
 
-                if let Some(opts) = op.attributes.as_scatter_elements() {
+                if let Some(opts) = options {
                     inputs.insert("axis".to_string(), Self::create_immediate_int(opts.axis));
                 }
             }
 
-            "scatternd" => {
+            Operation::ScatterND { .. } => {
                 // scatter_nd: data, indices, updates
                 if input_names.len() >= 3 {
                     inputs.insert("data".to_string(), Self::create_argument(&input_names[0]));
@@ -1990,13 +2222,13 @@ impl CoremlMlProgramConverter {
                 }
             }
 
-            "tile" => {
+            Operation::Tile { options, .. } => {
                 // tile: x, reps
                 if !input_names.is_empty() {
                     inputs.insert("x".to_string(), Self::create_argument(&input_names[0]));
                 }
 
-                if let Some(opts) = op.attributes.as_tile()
+                if let Some(opts) = options
                     && !opts.repetitions.is_empty()
                 {
                     inputs.insert(
@@ -2006,13 +2238,13 @@ impl CoremlMlProgramConverter {
                 }
             }
 
-            "cumulativesum" | "cumulative_sum" => {
+            Operation::CumulativeSum { options, .. } => {
                 // cumsum: x, axis, exclusive, reverse
                 if !input_names.is_empty() {
                     inputs.insert("x".to_string(), Self::create_argument(&input_names[0]));
                 }
 
-                if let Some(opts) = op.attributes.as_cumulative_sum() {
+                if let Some(opts) = options {
                     inputs.insert(
                         "axis".to_string(),
                         Self::create_int_argument(opts.axis as i32),
@@ -2028,28 +2260,43 @@ impl CoremlMlProgramConverter {
                 }
             }
 
-            "reverse" => {
+            Operation::Reverse { options, .. } => {
                 // reverse: x, axes
                 if !input_names.is_empty() {
                     inputs.insert("x".to_string(), Self::create_argument(&input_names[0]));
                 }
 
                 // Default behavior: reverse all axes when options.axes is omitted.
-                let axes_u32: Vec<u32> = if let Some(opts) =
-                    op.attributes.as_reverse().and_then(|o| o.axes.as_ref())
-                    && !opts.is_empty()
-                {
-                    opts.clone()
-                } else if let Some(input_id) = op.input_operands.first() {
-                    if let Some(input_operand) = _graph.operand(*input_id) {
-                        (0..input_operand.descriptor.shape.len())
-                            .map(|axis| axis as u32)
-                            .collect()
-                    } else {
-                        Vec::new()
+                let axes_u32: Vec<u32> = match options.as_ref() {
+                    Some(opts) => match opts.axes.as_ref() {
+                        Some(axes) => axes.clone(),
+                        None => {
+                            if let Some(input_id) = op.input_operands().first() {
+                                if let Some(input_operand) = _graph.operand(*input_id) {
+                                    (0..input_operand.descriptor.shape.len())
+                                        .map(|axis| axis as u32)
+                                        .collect()
+                                } else {
+                                    Vec::new()
+                                }
+                            } else {
+                                Vec::new()
+                            }
+                        }
+                    },
+                    None => {
+                        if let Some(input_id) = op.input_operands().first() {
+                            if let Some(input_operand) = _graph.operand(*input_id) {
+                                (0..input_operand.descriptor.shape.len())
+                                    .map(|axis| axis as u32)
+                                    .collect()
+                            } else {
+                                Vec::new()
+                            }
+                        } else {
+                            Vec::new()
+                        }
                     }
-                } else {
-                    Vec::new()
                 };
 
                 // Always provide axes, including empty arrays (explicit no-op).
@@ -2059,23 +2306,15 @@ impl CoremlMlProgramConverter {
                 );
             }
 
-            "triangular" => {
+            Operation::Triangular { options, .. } => {
                 // band_part: x, lower, upper
                 if !input_names.is_empty() {
                     inputs.insert("x".to_string(), Self::create_argument(&input_names[0]));
                 }
 
                 // CoreML band_part uses lower and upper bounds instead of upper/diagonal
-                let is_upper = op
-                    .attributes
-                    .as_triangular()
-                    .and_then(|o| o.upper)
-                    .unwrap_or(true);
-                let diagonal = op
-                    .attributes
-                    .as_triangular()
-                    .map(|o| o.diagonal as i64)
-                    .unwrap_or(0);
+                let is_upper = options.as_ref().and_then(|o| o.upper).unwrap_or(true);
+                let diagonal = options.as_ref().map(|o| o.diagonal as i64).unwrap_or(0);
 
                 // Convert WebNN (upper, diagonal) to CoreML (lower, upper)
                 // For upper triangle: keep diagonal and above
@@ -2099,15 +2338,23 @@ impl CoremlMlProgramConverter {
             }
 
             // Reduction operations: reduceSum, reduceMean, reduceMax, etc.
-            "reducesum" | "reducemean" | "reducemax" | "reducemin" | "reduceproduct"
-            | "reducel1" | "reducel2" | "reducelogsum" | "reducelogsumexp" | "reducesumsquare" => {
+            Operation::ReduceSum { options, .. }
+            | Operation::ReduceMean { options, .. }
+            | Operation::ReduceMax { options, .. }
+            | Operation::ReduceMin { options, .. }
+            | Operation::ReduceProduct { options, .. }
+            | Operation::ReduceL1 { options, .. }
+            | Operation::ReduceL2 { options, .. }
+            | Operation::ReduceLogSum { options, .. }
+            | Operation::ReduceLogSumExp { options, .. }
+            | Operation::ReduceSumSquare { options, .. } => {
                 // All reduce operations: x, axes, keep_dims
                 if !input_names.is_empty() {
                     inputs.insert("x".to_string(), Self::create_argument(&input_names[0]));
                 }
 
-                if let Some(opts) = op.attributes.as_reduce() {
-                    if let Some(ref axes) = opts.axes
+                if let Some(opts) = options {
+                    if let Some(axes) = opts.axes.as_ref()
                         && !axes.is_empty()
                     {
                         inputs.insert("axes".to_string(), Self::create_immediate_int_array(axes));
@@ -2144,8 +2391,7 @@ impl CoremlMlProgramConverter {
             DataType::Int32 => {
                 crate::protos::coreml::specification::array_feature_type::ArrayDataType::Int32
             }
-            // Unsupported types - CoreML feature descriptions only support DOUBLE, FLOAT32, FLOAT16, INT32
-            // These must be skipped in tests
+            // Unsupported types - assume they have been converted to FLOAT32.
             DataType::Int4
             | DataType::Uint4
             | DataType::Int8
@@ -2153,13 +2399,7 @@ impl CoremlMlProgramConverter {
             | DataType::Uint32
             | DataType::Int64
             | DataType::Uint64 => {
-                return Err(GraphError::ConversionFailed {
-                    format: "coreml_mlprogram".to_string(),
-                    reason: format!(
-                        "Unsupported feature data type: {:?}. CoreML feature descriptions only support DOUBLE, FLOAT32, FLOAT16, INT32.",
-                        descriptor.data_type
-                    ),
-                });
+                crate::protos::coreml::specification::array_feature_type::ArrayDataType::Float32
             }
         };
 
@@ -2211,14 +2451,73 @@ impl super::GraphConverter for CoremlMlProgramConverter {
         // Create main function
         let mut main_function = Function::default();
 
+        // Keep MLProgram boundary types aligned with CoreML feature-description
+        // restrictions. Unsupported WebNN I/O types (such as uint8) are exposed
+        // as float32 at the function boundary and cast to/from the internal
+        // graph representation inside the main block.
+        let mut operand_name_overrides: HashMap<u32, String> = HashMap::new();
+
+        for &output_id in &graph_info.output_operands {
+            if let Some(operand) = graph_info.operand(output_id) {
+                let graph_mil_type = Self::mil_data_type(&operand.descriptor.data_type)?;
+                let interface_mil_type =
+                    Self::interface_mil_data_type(&operand.descriptor.data_type);
+                if graph_mil_type != interface_mil_type {
+                    let output_name = operand_name(graph_info, output_id);
+                    operand_name_overrides.insert(output_id, format!("{}_graph", output_name));
+                }
+            }
+        }
+
         // Add function inputs from graph inputs
         for &input_id in &graph_info.input_operands {
-            let (_name, value_type) = Self::create_value(graph_info, input_id)?;
+            let operand =
+                graph_info
+                    .operand(input_id)
+                    .ok_or_else(|| GraphError::ConversionFailed {
+                        format: "coreml_mlprogram".to_string(),
+                        reason: format!("Input operand {} not found", input_id),
+                    })?;
+            let input_name = operand_name(graph_info, input_id);
+            let value_type = Self::create_value_with_mil_type(
+                graph_info,
+                input_id,
+                input_name,
+                Self::interface_mil_data_type(&operand.descriptor.data_type),
+            )?;
             main_function.inputs.push(value_type);
         }
 
         // Create main block
         let mut main_block = Block::default();
+
+        for &input_id in &graph_info.input_operands {
+            let operand =
+                graph_info
+                    .operand(input_id)
+                    .ok_or_else(|| GraphError::ConversionFailed {
+                        format: "coreml_mlprogram".to_string(),
+                        reason: format!("Input operand {} not found", input_id),
+                    })?;
+            let graph_mil_type = Self::mil_data_type(&operand.descriptor.data_type)?;
+            let interface_mil_type = Self::interface_mil_data_type(&operand.descriptor.data_type);
+            if graph_mil_type != interface_mil_type {
+                let input_name = operand_name(graph_info, input_id);
+                let graph_input_name = format!("{}_graph", input_name);
+                operand_name_overrides.insert(input_id, graph_input_name.clone());
+                let graph_input_type = Self::create_value_with_mil_type(
+                    graph_info,
+                    input_id,
+                    graph_input_name,
+                    graph_mil_type,
+                )?;
+                main_block.operations.push(Self::create_cast_operation(
+                    input_name,
+                    graph_input_type,
+                    Self::cast_dtype_string_for_graph_type(&operand.descriptor.data_type)?,
+                ));
+            }
+        }
 
         // Add constant operands as const operations
         for (operand_id, constant_data) in &graph_info.constant_operand_ids_to_handles {
@@ -2241,26 +2540,23 @@ impl super::GraphConverter for CoremlMlProgramConverter {
         }
 
         // First pass: Handle filter layout transformations for conv operations
-        // Create a map of operand IDs to their transposed filter names
-        let mut operand_name_overrides: HashMap<u32, String> = HashMap::new();
 
         for op in &graph_info.operations {
-            let op_type_lower = op.op_type.to_lowercase();
+            let op_type_lower = op.op_type().to_lowercase();
 
             if (op_type_lower == "conv2d" || op_type_lower == "convtranspose2d")
-                && op.input_operands.len() >= 2
+                && op.input_operands().len() >= 2
             {
-                let filter_layout = match op_type_lower.as_str() {
-                    "conv2d" => op
-                        .attributes
-                        .as_conv2d()
+                let filter_layout = match &op {
+                    Operation::Conv2d { options, .. } => options
+                        .as_ref()
                         .map(|o| o.filter_layout.as_str())
                         .unwrap_or(""),
-                    _ => op
-                        .attributes
-                        .as_conv_transpose2d()
+                    Operation::ConvTranspose2d { options, .. } => options
+                        .as_ref()
                         .map(|o| o.filter_layout.as_str())
                         .unwrap_or(""),
+                    _ => "",
                 };
                 if !filter_layout.is_empty() {
                     let expected_layout = if op_type_lower == "conv2d" {
@@ -2270,7 +2566,7 @@ impl super::GraphConverter for CoremlMlProgramConverter {
                     };
 
                     if filter_layout != expected_layout {
-                        let filter_operand_id = op.input_operands[1];
+                        let filter_operand_id = op.input_operands()[1];
 
                         if let Some(filter_operand) = graph_info.operand(filter_operand_id) {
                             // Calculate transpose permutation
@@ -2340,20 +2636,19 @@ impl super::GraphConverter for CoremlMlProgramConverter {
                     }
                 }
 
-                let input_layout = match op_type_lower.as_str() {
-                    "conv2d" => op
-                        .attributes
-                        .as_conv2d()
+                let input_layout = match &op {
+                    Operation::Conv2d { options, .. } => options
+                        .as_ref()
                         .map(|o| o.input_layout.as_str())
                         .unwrap_or(""),
-                    _ => op
-                        .attributes
-                        .as_conv_transpose2d()
+                    Operation::ConvTranspose2d { options, .. } => options
+                        .as_ref()
                         .map(|o| o.input_layout.as_str())
                         .unwrap_or(""),
+                    _ => "",
                 };
-                if input_layout == "nhwc" && !op.input_operands.is_empty() {
-                    let input_operand_id = op.input_operands[0];
+                if input_layout == "nhwc" && !op.input_operands().is_empty() {
+                    let input_operand_id = op.input_operands()[0];
 
                     // Only transpose if not already transposed
                     if !operand_name_overrides.contains_key(&input_operand_id)
@@ -2417,38 +2712,177 @@ impl super::GraphConverter for CoremlMlProgramConverter {
 
         // Convert all operations to MIL operations
         for op in &graph_info.operations {
+            let op_type_lower = op.op_type().to_lowercase();
+
+            if matches!(
+                op_type_lower.as_str(),
+                "equal"
+                    | "greater"
+                    | "greaterorequal"
+                    | "lesser"
+                    | "lesserorequal"
+                    | "logicalnot"
+                    | "logicaland"
+                    | "logicalor"
+                    | "logicalxor"
+                    | "notequal"
+            ) {
+                use crate::protos::coreml::mil_spec::DataType as MilDataType;
+
+                let output_id =
+                    op.output_operand()
+                        .ok_or_else(|| GraphError::ConversionFailed {
+                            format: "CoreML MLProgram".to_string(),
+                            reason: format!("operation '{}' has no output operand", op.op_type()),
+                        })?;
+                let output_operand =
+                    graph_info
+                        .operand(output_id)
+                        .ok_or_else(|| GraphError::ConversionFailed {
+                            format: "coreml_mlprogram".to_string(),
+                            reason: format!("Output operand {} not found", output_id),
+                        })?;
+                if output_operand.descriptor.data_type != DataType::Uint8 {
+                    return Err(GraphError::ConversionFailed {
+                        format: "coreml_mlprogram".to_string(),
+                        reason: format!(
+                            "CoreML logical op '{}' expects uint8 graph output, got {:?}",
+                            op.op_type(),
+                            output_operand.descriptor.data_type
+                        ),
+                    });
+                }
+
+                let (output_name, output_type) =
+                    Self::create_output_value(graph_info, output_id, &operand_name_overrides)?;
+                let bool_output_name = format!("{}_bool", output_name);
+                let bool_output_type = Self::create_value_with_mil_type(
+                    graph_info,
+                    output_id,
+                    bool_output_name.clone(),
+                    MilDataType::Bool as i32,
+                )?;
+
+                let mut input_names =
+                    Self::input_names_for_operation(graph_info, op, &operand_name_overrides);
+
+                if matches!(
+                    op_type_lower.as_str(),
+                    "logicalnot" | "logicaland" | "logicalor" | "logicalxor"
+                ) {
+                    for (index, &input_id) in op.input_operands().iter().enumerate() {
+                        let input_operand = graph_info.operand(input_id).ok_or_else(|| {
+                            GraphError::ConversionFailed {
+                                format: "coreml_mlprogram".to_string(),
+                                reason: format!("Input operand {} not found", input_id),
+                            }
+                        })?;
+                        if input_operand.descriptor.data_type == DataType::Uint8 {
+                            let bool_input_name = format!("{}_bool", input_names[index]);
+                            let bool_input_type = Self::create_value_with_mil_type(
+                                graph_info,
+                                input_id,
+                                bool_input_name.clone(),
+                                MilDataType::Bool as i32,
+                            )?;
+                            main_block.operations.push(Self::create_cast_operation(
+                                input_names[index].clone(),
+                                bool_input_type,
+                                "bool",
+                            ));
+                            input_names[index] = bool_input_name;
+                        }
+                    }
+                }
+
+                if op_type_lower == "notequal" {
+                    let equal_output_name = format!("{}_equal", output_name);
+                    let equal_output_type = Self::create_value_with_mil_type(
+                        graph_info,
+                        output_id,
+                        equal_output_name.clone(),
+                        MilDataType::Bool as i32,
+                    )?;
+
+                    let mut equal_inputs = HashMap::new();
+                    equal_inputs.insert(
+                        "x".to_string(),
+                        Self::create_name_argument(input_names[0].clone()),
+                    );
+                    equal_inputs.insert(
+                        "y".to_string(),
+                        Self::create_name_argument(input_names[1].clone()),
+                    );
+                    main_block.operations.push(Self::create_mil_operation(
+                        mil_ops::EQUAL,
+                        equal_inputs,
+                        vec![equal_output_type],
+                    ));
+
+                    let mut not_inputs = HashMap::new();
+                    not_inputs.insert(
+                        "x".to_string(),
+                        Self::create_name_argument(equal_output_name),
+                    );
+                    main_block.operations.push(Self::create_mil_operation(
+                        mil_ops::LOGICAL_NOT,
+                        not_inputs,
+                        vec![bool_output_type],
+                    ));
+                } else {
+                    let mil_op = self.convert_operation_with_input_names_and_outputs(
+                        graph_info,
+                        op,
+                        &input_names,
+                        vec![bool_output_type],
+                        self.get_mil_op_type(op.op_type())?,
+                    )?;
+                    main_block.operations.push(mil_op);
+                }
+
+                main_block.operations.push(Self::create_cast_operation(
+                    bool_output_name,
+                    output_type,
+                    "uint8",
+                ));
+                continue;
+            }
+
             // Special handling for clamp with equal bounds.
             // CoreML clip rejects alpha == beta, while WebNN clamp(min==max) is valid and
             // should produce a constant tensor. Lower as: output = input * 0 + bound.
-            if op.op_type.to_lowercase() == "clamp" {
-                let (min_value, max_value) = op
-                    .attributes
-                    .as_clamp()
-                    .map(|o| {
-                        (
-                            Self::parse_clamp_bound(o.min_value.as_ref(), f64::NEG_INFINITY),
-                            Self::parse_clamp_bound(o.max_value.as_ref(), f64::INFINITY),
-                        )
-                    })
-                    .unwrap_or((f64::NEG_INFINITY, f64::INFINITY));
+            if op_type_lower == "clamp" {
+                let (min_value, max_value) = match &op {
+                    Operation::Clamp { options, .. } => options
+                        .as_ref()
+                        .map(|o| {
+                            (
+                                Self::parse_clamp_bound(o.min_value.as_ref(), f64::NEG_INFINITY),
+                                Self::parse_clamp_bound(o.max_value.as_ref(), f64::INFINITY),
+                            )
+                        })
+                        .unwrap_or((f64::NEG_INFINITY, f64::INFINITY)),
+                    _ => (f64::NEG_INFINITY, f64::INFINITY),
+                };
 
                 if min_value == max_value {
-                    if op.input_operands.is_empty() || op.output_operand.is_none() {
+                    if op.input_operands().is_empty() || op.output_operand().is_none() {
                         return Err(GraphError::ConversionFailed {
                             format: "coreml_mlprogram".to_string(),
                             reason: "clamp requires input and output operand".to_string(),
                         });
                     }
 
-                    let input_id = op.input_operands[0];
+                    let input_id = op.input_operands()[0];
                     let input_operand = graph_info.operand(input_id).ok_or_else(|| {
                         GraphError::ConversionFailed {
                             format: "coreml_mlprogram".to_string(),
                             reason: format!("Input operand {} not found", input_id),
                         }
                     })?;
-                    let output_id = op.output_operand.expect("checked above");
-                    let (output_name, output_type) = Self::create_value(graph_info, output_id)?;
+                    let output_id = op.output_operand().expect("checked above");
+                    let (output_name, output_type) =
+                        Self::create_output_value(graph_info, output_id, &operand_name_overrides)?;
                     let input_name = operand_name(graph_info, input_id);
                     let zeroed_name = format!("{}_clamp_zeroed", output_name);
 
@@ -2514,10 +2948,12 @@ impl super::GraphConverter for CoremlMlProgramConverter {
             }
 
             // Special handling for expand operation (may need reshape first)
-            if op.op_type.to_lowercase() == "expand"
-                && !op.input_operands.is_empty()
-                && let Some(input_operand) = graph_info.operand(op.input_operands[0])
-                && let Some(opts) = op.attributes.as_expand()
+            if let Operation::Expand {
+                options: Some(opts),
+                ..
+            } = &op
+                && !op.input_operands().is_empty()
+                && let Some(input_operand) = graph_info.operand(op.input_operands()[0])
             {
                 let new_shape = opts.new_shape_static_or_max();
                 let input_shape = input_operand.descriptor.static_or_max_shape();
@@ -2532,7 +2968,7 @@ impl super::GraphConverter for CoremlMlProgramConverter {
                     }
 
                     //Create reshape operation
-                    let input_name = operand_name(graph_info, op.input_operands[0]);
+                    let input_name = operand_name(graph_info, op.input_operands()[0]);
                     // Use input name to create unique intermediate name (don't rely on output_operands)
                     let reshape_output_name = format!("{}_expand_reshaped", input_name);
 
@@ -2587,25 +3023,25 @@ impl super::GraphConverter for CoremlMlProgramConverter {
             // Special handling for hardswish (decompose into hardsigmoid + mul)
             // Following Chromium: hardswish = x * hardsigmoid(x, alpha=1/6, beta=0.5)
             // Note: op_type is "hardSwish" but we normalize to lowercase
-            let op_type_lower = op.op_type.to_lowercase();
             if op_type_lower == "hardswish" {
                 // Validate inputs/outputs exist
                 // Note: hardswish uses output_operand (singular), not output_operands
-                if op.input_operands.is_empty() || op.output_operand.is_none() {
+                if op.input_operands().is_empty() || op.output_operand().is_none() {
                     return Err(GraphError::ConversionFailed {
                         format: "coreml_mlprogram".to_string(),
                         reason: "hardswish requires input and output operand".to_string(),
                     });
                 }
 
-                let input_operand = graph_info.operand(op.input_operands[0]).ok_or_else(|| {
-                    GraphError::ConversionFailed {
-                        format: "coreml_mlprogram".to_string(),
-                        reason: format!("Input operand {} not found", op.input_operands[0]),
-                    }
-                })?;
+                let input_operand =
+                    graph_info.operand(op.input_operands()[0]).ok_or_else(|| {
+                        GraphError::ConversionFailed {
+                            format: "coreml_mlprogram".to_string(),
+                            reason: format!("Input operand {} not found", op.input_operands()[0]),
+                        }
+                    })?;
                 {
-                    let input_name = operand_name(graph_info, op.input_operands[0]);
+                    let input_name = operand_name(graph_info, op.input_operands()[0]);
                     let hardsigmoid_output_name = format!("{}_hardswish_hardsigmoid", input_name);
 
                     // Create hardsigmoid operation with alpha=1/6, beta=0.5
@@ -2661,7 +3097,7 @@ impl super::GraphConverter for CoremlMlProgramConverter {
                     );
 
                     // Get output name (using singular output_operand field)
-                    let output_operand_id = op.output_operand.unwrap();
+                    let output_operand_id = op.output_operand().unwrap();
                     let output_name = operand_name(graph_info, output_operand_id);
                     let output_operand =
                         graph_info.operand(output_operand_id).ok_or_else(|| {
@@ -2708,14 +3144,14 @@ impl super::GraphConverter for CoremlMlProgramConverter {
             // Special handling for gemm: y = alpha * op(a) * op(b) + beta * c
             // Lower to matmul + optional mul(alpha) + optional mul(beta, c) + add.
             if op_type_lower == "gemm" {
-                if op.input_operands.len() < 2 || op.output_operand.is_none() {
+                if op.input_operands().len() < 2 || op.output_operand().is_none() {
                     return Err(GraphError::ConversionFailed {
                         format: "coreml_mlprogram".to_string(),
                         reason: "gemm requires at least 2 input operands and 1 output".to_string(),
                     });
                 }
 
-                let output_operand_id = op.output_operand.unwrap();
+                let output_operand_id = op.output_operand().unwrap();
                 let output_operand = graph_info.operand(output_operand_id).ok_or_else(|| {
                     GraphError::ConversionFailed {
                         format: "coreml_mlprogram".to_string(),
@@ -2725,18 +3161,15 @@ impl super::GraphConverter for CoremlMlProgramConverter {
 
                 let (output_name, output_type) = Self::create_value(graph_info, output_operand_id)?;
 
-                let alpha = op
-                    .attributes
-                    .get("alpha")
-                    .and_then(|v| v.as_f64())
-                    .unwrap_or(1.0) as f32;
-                let beta = op
-                    .attributes
-                    .get("beta")
-                    .and_then(|v| v.as_f64())
-                    .unwrap_or(1.0) as f32;
+                let (alpha, beta) = match &op {
+                    Operation::Gemm { options, .. } => (
+                        options.as_ref().map(|o| o.alpha as f32).unwrap_or(1.0),
+                        options.as_ref().map(|o| o.beta as f32).unwrap_or(1.0),
+                    ),
+                    _ => (1.0, 1.0),
+                };
 
-                let has_bias = op.input_operands.len() >= 3;
+                let has_bias = op.input_operands().len() >= 3;
                 let needs_alpha_mul = (alpha - 1.0).abs() > f32::EPSILON;
                 let needs_beta_mul = has_bias && (beta - 1.0).abs() > f32::EPSILON;
 
@@ -2770,22 +3203,19 @@ impl super::GraphConverter for CoremlMlProgramConverter {
                 let mut matmul_inputs: HashMap<String, Argument> = HashMap::new();
                 matmul_inputs.insert(
                     "x".to_string(),
-                    Self::create_name_argument(operand_name(graph_info, op.input_operands[0])),
+                    Self::create_name_argument(operand_name(graph_info, op.input_operands()[0])),
                 );
                 matmul_inputs.insert(
                     "y".to_string(),
-                    Self::create_name_argument(operand_name(graph_info, op.input_operands[1])),
+                    Self::create_name_argument(operand_name(graph_info, op.input_operands()[1])),
                 );
-                let a_transpose = op
-                    .attributes
-                    .get("aTranspose")
-                    .and_then(|v| v.as_bool())
-                    .unwrap_or(false);
-                let b_transpose = op
-                    .attributes
-                    .get("bTranspose")
-                    .and_then(|v| v.as_bool())
-                    .unwrap_or(false);
+                let (a_transpose, b_transpose) = match &op {
+                    Operation::Gemm { options, .. } => (
+                        options.as_ref().map(|o| o.a_transpose).unwrap_or(false),
+                        options.as_ref().map(|o| o.b_transpose).unwrap_or(false),
+                    ),
+                    _ => (false, false),
+                };
                 matmul_inputs.insert(
                     "transpose_x".to_string(),
                     Self::create_immediate_bool(a_transpose),
@@ -2830,7 +3260,7 @@ impl super::GraphConverter for CoremlMlProgramConverter {
                 }
 
                 if has_bias {
-                    let c_operand_id = op.input_operands[2];
+                    let c_operand_id = op.input_operands()[2];
                     let (c_name, c_type) = Self::create_value(graph_info, c_operand_id)?;
                     let scaled_c_name = if needs_beta_mul {
                         format!("{}_gemm_bias", output_name)
@@ -2873,20 +3303,21 @@ impl super::GraphConverter for CoremlMlProgramConverter {
             // Special handling for linear: y = alpha * x + beta
             // Lower to mul + add primitives for backend parity.
             if op_type_lower == "linear" {
-                if op.input_operands.is_empty() || op.output_operand.is_none() {
+                if op.input_operands().is_empty() || op.output_operand().is_none() {
                     return Err(GraphError::ConversionFailed {
                         format: "coreml_mlprogram".to_string(),
                         reason: "linear requires input and output operand".to_string(),
                     });
                 }
 
-                let input_operand = graph_info.operand(op.input_operands[0]).ok_or_else(|| {
-                    GraphError::ConversionFailed {
-                        format: "coreml_mlprogram".to_string(),
-                        reason: format!("Input operand {} not found", op.input_operands[0]),
-                    }
-                })?;
-                let output_operand_id = op.output_operand.unwrap();
+                let input_operand =
+                    graph_info.operand(op.input_operands()[0]).ok_or_else(|| {
+                        GraphError::ConversionFailed {
+                            format: "coreml_mlprogram".to_string(),
+                            reason: format!("Input operand {} not found", op.input_operands()[0]),
+                        }
+                    })?;
+                let output_operand_id = op.output_operand().unwrap();
                 let output_operand = graph_info.operand(output_operand_id).ok_or_else(|| {
                     GraphError::ConversionFailed {
                         format: "coreml_mlprogram".to_string(),
@@ -2894,11 +3325,13 @@ impl super::GraphConverter for CoremlMlProgramConverter {
                     }
                 })?;
 
-                let (alpha, beta) = op
-                    .attributes
-                    .as_linear()
-                    .map(|o| (o.alpha as f32, o.beta as f32))
-                    .unwrap_or((1.0, 0.0));
+                let (alpha, beta) = match &op {
+                    Operation::Linear { options, .. } => options
+                        .as_ref()
+                        .map(|o| (o.alpha as f32, o.beta as f32))
+                        .unwrap_or((1.0, 0.0)),
+                    _ => (1.0, 0.0),
+                };
 
                 let (alpha_arg, beta_arg) = match input_operand.descriptor.data_type {
                     DataType::Float16 => (
@@ -2920,7 +3353,7 @@ impl super::GraphConverter for CoremlMlProgramConverter {
                     }
                 };
 
-                let input_name = operand_name(graph_info, op.input_operands[0]);
+                let input_name = operand_name(graph_info, op.input_operands()[0]);
                 let output_name = operand_name(graph_info, output_operand_id);
                 let mul_output_name = format!("{}_linear_mul", output_name);
 
@@ -2981,21 +3414,22 @@ impl super::GraphConverter for CoremlMlProgramConverter {
             // Following Chromium: neg = mul(x, -1) with constant matching input dtype
             if op_type_lower == "neg" {
                 // Validate inputs/outputs exist
-                if op.input_operands.is_empty() || op.output_operand.is_none() {
+                if op.input_operands().is_empty() || op.output_operand().is_none() {
                     return Err(GraphError::ConversionFailed {
                         format: "coreml_mlprogram".to_string(),
                         reason: "neg requires input and output operand".to_string(),
                     });
                 }
 
-                let input_operand = graph_info.operand(op.input_operands[0]).ok_or_else(|| {
-                    GraphError::ConversionFailed {
-                        format: "coreml_mlprogram".to_string(),
-                        reason: format!("Input operand {} not found", op.input_operands[0]),
-                    }
-                })?;
+                let input_operand =
+                    graph_info.operand(op.input_operands()[0]).ok_or_else(|| {
+                        GraphError::ConversionFailed {
+                            format: "coreml_mlprogram".to_string(),
+                            reason: format!("Input operand {} not found", op.input_operands()[0]),
+                        }
+                    })?;
 
-                let input_name = operand_name(graph_info, op.input_operands[0]);
+                let input_name = operand_name(graph_info, op.input_operands()[0]);
 
                 // Create typed -1 constant matching input dtype
                 let neg_one_immediate = match input_operand.descriptor.data_type {
@@ -3053,7 +3487,7 @@ impl super::GraphConverter for CoremlMlProgramConverter {
                 mul_inputs.insert("y".to_string(), neg_one_immediate);
 
                 // Get output name
-                let output_operand_id = op.output_operand.unwrap();
+                let output_operand_id = op.output_operand().unwrap();
                 let output_name = operand_name(graph_info, output_operand_id);
                 let output_operand = graph_info.operand(output_operand_id).ok_or_else(|| {
                     GraphError::ConversionFailed {
@@ -3097,7 +3531,31 @@ impl super::GraphConverter for CoremlMlProgramConverter {
 
         // Add block outputs (output operand names)
         for &output_id in &graph_info.output_operands {
+            let operand =
+                graph_info
+                    .operand(output_id)
+                    .ok_or_else(|| GraphError::ConversionFailed {
+                        format: "coreml_mlprogram".to_string(),
+                        reason: format!("Output operand {} not found", output_id),
+                    })?;
             let output_name = operand_name(graph_info, output_id);
+            let graph_output_name =
+                Self::output_name_for_operand(graph_info, output_id, &operand_name_overrides);
+            let graph_mil_type = Self::mil_data_type(&operand.descriptor.data_type)?;
+            let interface_mil_type = Self::interface_mil_data_type(&operand.descriptor.data_type);
+            if graph_mil_type != interface_mil_type {
+                let output_type = Self::create_value_with_mil_type(
+                    graph_info,
+                    output_id,
+                    output_name.clone(),
+                    interface_mil_type,
+                )?;
+                main_block.operations.push(Self::create_cast_operation(
+                    graph_output_name,
+                    output_type,
+                    Self::cast_dtype_string_for_mil_type(interface_mil_type)?,
+                ));
+            }
             main_block.outputs.push(output_name);
         }
 
@@ -3190,10 +3648,30 @@ mod tests {
     use crate::converters::GraphConverter;
     #[cfg(feature = "dynamic-inputs")]
     use crate::graph::DynamicDimension;
-    use crate::graph::{
-        ConstantData, GraphInfo, Operand, OperandDescriptor, OperandKind, Operation,
-    };
+    use crate::graph::{ConstantData, GraphInfo, Operand, OperandDescriptor, OperandKind};
     use crate::operator_options::OperatorOptions;
+    use crate::operators::Operation;
+
+    /// Build an `Operation` from WebNN-style `op` name, operand indices, and parsed options (tests).
+    fn op_from_operator_options(
+        op_type: &str,
+        input_operands: Vec<u32>,
+        output_operand: Option<u32>,
+        output_operands: Vec<u32>,
+        attributes: OperatorOptions,
+    ) -> Operation {
+        let output_ids: Vec<u32> = if !output_operands.is_empty() {
+            output_operands
+        } else if let Some(o) = output_operand {
+            vec![o]
+        } else {
+            Vec::new()
+        };
+        let operator =
+            Operation::from_operator_options(op_type, &input_operands, &attributes, &output_ids)
+                .expect("valid test op");
+        operator
+    }
     #[cfg(feature = "dynamic-inputs")]
     use crate::protos::coreml::mil_spec::dimension;
     use crate::protos::coreml::specification::Model;
@@ -3249,14 +3727,13 @@ mod tests {
             .insert(0, ConstantData { data, label: None });
 
         // Add a simple relu operation
-        graph.operations.push(Operation {
-            op_type: "relu".to_string(),
-            input_operands: vec![0],
-            output_operand: Some(1),
-            output_operands: vec![],
-            attributes: OperatorOptions::default(),
-            label: None,
-        });
+        graph.operations.push(op_from_operator_options(
+            "relu",
+            vec![0],
+            Some(1),
+            vec![],
+            OperatorOptions::default(),
+        ));
 
         graph
     }
@@ -3473,14 +3950,13 @@ mod tests {
         });
 
         // Add operation: output = constant1 + constant2
-        graph.operations.push(Operation {
-            op_type: "add".to_string(),
-            input_operands: vec![0, 1],
-            output_operand: Some(2),
-            output_operands: vec![],
-            attributes: OperatorOptions::default(),
-            label: None,
-        });
+        graph.operations.push(op_from_operator_options(
+            "add",
+            vec![0, 1],
+            Some(2),
+            vec![],
+            OperatorOptions::default(),
+        ));
 
         // Convert
         let converter = CoremlMlProgramConverter;
@@ -3553,14 +4029,13 @@ mod tests {
         });
 
         // Add relu operation
-        graph.operations.push(Operation {
-            op_type: "relu".to_string(),
-            input_operands: vec![0],
-            output_operand: Some(1),
-            output_operands: vec![],
-            attributes: OperatorOptions::default(),
-            label: None,
-        });
+        graph.operations.push(op_from_operator_options(
+            "relu",
+            vec![0],
+            Some(1),
+            vec![],
+            OperatorOptions::default(),
+        ));
 
         // Convert
         let converter = CoremlMlProgramConverter;
@@ -3608,14 +4083,13 @@ mod tests {
         });
 
         // Add relu operation
-        graph.operations.push(Operation {
-            op_type: "relu".to_string(),
-            input_operands: vec![0],
-            output_operand: Some(1),
-            output_operands: vec![],
-            attributes: OperatorOptions::default(),
-            label: None,
-        });
+        graph.operations.push(op_from_operator_options(
+            "relu",
+            vec![0],
+            Some(1),
+            vec![],
+            OperatorOptions::default(),
+        ));
 
         // Convert should fail with Int4
         let converter = CoremlMlProgramConverter;
@@ -3671,14 +4145,13 @@ mod tests {
         });
 
         // Add relu operation
-        graph.operations.push(Operation {
-            op_type: "relu".to_string(),
-            input_operands: vec![0],
-            output_operand: Some(1),
-            output_operands: vec![],
-            attributes: OperatorOptions::default(),
-            label: None,
-        });
+        graph.operations.push(op_from_operator_options(
+            "relu",
+            vec![0],
+            Some(1),
+            vec![],
+            OperatorOptions::default(),
+        ));
 
         // Convert should fail with Uint4
         let converter = CoremlMlProgramConverter;
@@ -3730,14 +4203,13 @@ mod tests {
         });
 
         // Add relu operation
-        graph.operations.push(Operation {
-            op_type: "relu".to_string(),
-            input_operands: vec![0],
-            output_operand: Some(1),
-            output_operands: vec![],
-            attributes: OperatorOptions::default(),
-            label: None,
-        });
+        graph.operations.push(op_from_operator_options(
+            "relu",
+            vec![0],
+            Some(1),
+            vec![],
+            OperatorOptions::default(),
+        ));
 
         // Convert should fail
         let converter = CoremlMlProgramConverter;
@@ -3780,14 +4252,13 @@ mod tests {
         });
 
         // Add relu operation
-        graph.operations.push(Operation {
-            op_type: "relu".to_string(),
-            input_operands: vec![0],
-            output_operand: Some(1),
-            output_operands: vec![],
-            attributes: OperatorOptions::default(),
-            label: None,
-        });
+        graph.operations.push(op_from_operator_options(
+            "relu",
+            vec![0],
+            Some(1),
+            vec![],
+            OperatorOptions::default(),
+        ));
 
         // Convert should fail
         let converter = CoremlMlProgramConverter;
@@ -3820,18 +4291,17 @@ mod tests {
                     },
                 },
             ],
-            operations: vec![Operation {
-                op_type: "linear".to_string(),
-                input_operands: vec![0],
-                output_operand: Some(1),
-                output_operands: vec![],
-                attributes: OperatorOptions::from_json_with_op_type(
+            operations: vec![op_from_operator_options(
+                "linear",
+                vec![0],
+                Some(1),
+                vec![],
+                OperatorOptions::from_json_with_op_type(
                     "linear",
                     &serde_json::json!({ "alpha": 2.0, "beta": -1.0 }),
                 )
                 .expect("linear options"),
-                label: None,
-            }],
+            )],
             constant_operand_ids_to_handles: HashMap::new(),
             id_to_constant_tensor_operand_map: HashMap::new(),
             quantized: false,
@@ -3893,14 +4363,13 @@ mod tests {
                     },
                 },
             ],
-            operations: vec![Operation {
-                op_type: "identity".to_string(),
-                input_operands: vec![0],
-                output_operand: Some(1),
-                output_operands: vec![],
-                attributes: OperatorOptions::default(),
-                label: None,
-            }],
+            operations: vec![op_from_operator_options(
+                "identity",
+                vec![0],
+                Some(1),
+                vec![],
+                OperatorOptions::default(),
+            )],
             constant_operand_ids_to_handles: HashMap::new(),
             id_to_constant_tensor_operand_map: HashMap::new(),
             quantized: false,
@@ -3955,14 +4424,13 @@ mod tests {
             },
         });
 
-        graph.operations.push(Operation {
-            op_type: "identity".to_string(),
-            input_operands: vec![0],
-            output_operand: Some(1),
-            output_operands: vec![],
-            attributes: OperatorOptions::default(),
-            label: None,
-        });
+        graph.operations.push(op_from_operator_options(
+            "identity",
+            vec![0],
+            Some(1),
+            vec![],
+            OperatorOptions::default(),
+        ));
 
         let converter = CoremlMlProgramConverter;
         let converted = converter.convert(&graph).unwrap();
@@ -4019,14 +4487,13 @@ mod tests {
                     },
                 },
             ],
-            operations: vec![Operation {
-                op_type: "linear".to_string(),
-                input_operands: vec![0],
-                output_operand: Some(1),
-                output_operands: vec![],
-                attributes: OperatorOptions::default(),
-                label: None,
-            }],
+            operations: vec![op_from_operator_options(
+                "linear",
+                vec![0],
+                Some(1),
+                vec![],
+                OperatorOptions::default(),
+            )],
             constant_operand_ids_to_handles: HashMap::new(),
             id_to_constant_tensor_operand_map: HashMap::new(),
             quantized: false,
@@ -4070,18 +4537,17 @@ mod tests {
                     },
                 },
             ],
-            operations: vec![Operation {
-                op_type: "cumulativeSum".to_string(),
-                input_operands: vec![0],
-                output_operand: Some(1),
-                output_operands: vec![],
-                attributes: OperatorOptions::from_json_with_op_type(
+            operations: vec![op_from_operator_options(
+                "cumulativeSum",
+                vec![0],
+                Some(1),
+                vec![],
+                OperatorOptions::from_json_with_op_type(
                     "cumulativeSum",
                     &serde_json::json!({ "axis": 1, "exclusive": true, "reversed": true }),
                 )
                 .expect("cumulativeSum options"),
-                label: None,
-            }],
+            )],
             constant_operand_ids_to_handles: HashMap::new(),
             id_to_constant_tensor_operand_map: HashMap::new(),
             quantized: false,
